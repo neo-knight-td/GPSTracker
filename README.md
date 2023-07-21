@@ -141,3 +141,5 @@ void HAL_GPIO_EXTI_Rising_Callback(uint16_t GPIO_Pin)
 29. ``-u _printf_float`` and ``-u _scanf_float`` to be added in Properties > C/C++ Build > Settings > Misc.
 
 30. The GSM module blinks (1s) 7 to 9 times then shuts down for 2 seconds. It keeps booting up & shuting down. From sources found online, this would indicate an issue with the power supply. The current would be too low when trying to send a burst (2A are required at that moment). We need to re-organize the wiring and to purchase a battery.
+
+31. ??
