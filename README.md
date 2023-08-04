@@ -1,5 +1,8 @@
 ## The GPS Tracker Project
 
+As I wanted to build experience in the field of embedded software programming, I was thinking of a nice project to work on. I found the idea of a GPS tracker. This project would allow me to interact with electronic components, develop in C for an MCU, gain experience with an embedded software IDE (STM32CubeIDE), test an embedded system and (last but not least) keep in touch with my love for motorcycles.
+
+This project provides the C code required to turn an STM 32 MCU into a GPS tracker. The project notes are available [below](https://github.com/neo-knight-td/GPSTracker#notes-on-the-project). These notes summarize all the small obstacles I met while making this project. As I have only few hours a week to work on this, the notes are pretty useful to remember what I did last coding session and thus improve efficiency.
 
 ## Notes on the project
 
