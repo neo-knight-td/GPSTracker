@@ -37,6 +37,7 @@
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 uint8_t UART1_rxBuffer[BUFF_SIZE] = {0};
+uint8_t UART3_rxBuffer[BUFF_SIZE] = {0};
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart);
 char nmea_raw_data[BUFF_SIZE];
 char loc_str[50] = " ";
@@ -108,17 +109,21 @@ void extract_location_from_nmea_raw_data(char nmea_raw_data[], char *loc_str[]){
 
 }
 
-int send_sms(char str_to_send[]){
+//this function checks that SIM800 GSM module responds OK to the AT command "AT" after a maximum of 10 attempts.
+int sim800_AT_OK(uint8_t debug_on){
 
-	char ATcommand[80];
+	//char ATcommand[80];
+	char ATcommand[] = "AT\r\n";
 	uint8_t buffer[30] = {0};
 	uint8_t ATisOK = 0;
+	uint8_t count = 0;
+	uint8_t timeout = 10;
 
 	while(!ATisOK){
-		sprintf(ATcommand,"AT\r\n");
-		HAL_UART_Transmit(&huart2,(uint8_t *)ATcommand,strlen(ATcommand),1000);
+
+		if (debug_on){HAL_UART_Transmit(&huart2,(uint8_t *)ATcommand,strlen(ATcommand),1000);}
 		HAL_UART_Transmit(&huart3,(uint8_t *)ATcommand,strlen(ATcommand),1000);
-		HAL_UART_Receive (&huart3, buffer, 30, 1000);
+		HAL_UART_Receive (&huart3, buffer, 30, 2000);
 		HAL_Delay(10);
 
 		if(strstr((char *)buffer,"OK")){
@@ -127,25 +132,146 @@ int send_sms(char str_to_send[]){
 
 		HAL_Delay(10);
 		memset(buffer,0,sizeof(buffer));
+
+		count++;
+		if (count >= timeout){
+			return -1;
+		}
 	}
 
-	sprintf(ATcommand,"AT+CMGF=1\r\n");
-	HAL_UART_Transmit(&huart2,(uint8_t *)ATcommand,strlen(ATcommand),1000);
-	HAL_UART_Transmit(&huart3,(uint8_t *)ATcommand,strlen(ATcommand),1000);
-	HAL_UART_Receive (&huart3, buffer, 30, 100);
-	HAL_Delay(10);
-	memset(buffer,0,sizeof(buffer));
-	sprintf(ATcommand,"AT+CMGS=\"%s\"\r\n",mobileNumber);
-	HAL_UART_Transmit(&huart2,(uint8_t *)ATcommand,strlen(ATcommand),1000);
-	HAL_UART_Transmit(&huart3,(uint8_t *)ATcommand,strlen(ATcommand),1000);
-	HAL_Delay(10);
-	sprintf(ATcommand,"%s%c",str_to_send,26);//,0x1a);
-	HAL_UART_Transmit(&huart2,(uint8_t *)ATcommand,strlen(ATcommand),1000);
-	HAL_UART_Transmit(&huart3,(uint8_t *)ATcommand,strlen(ATcommand),1000);
-	HAL_UART_Receive (&huart3, buffer, 30, 100);
-	memset(buffer,0,sizeof(buffer));
-	HAL_Delay(10);
+	return 1;
 }
+
+
+int sim800_setup(uint8_t debug_on){
+
+	char ATcommand[80];
+	uint8_t buffer[30] = {0};
+
+	if (!sim800_AT_OK(1)){
+		return -1;
+	}
+
+	//going text mode
+	sprintf(ATcommand,"AT+CMGF=1\r\n");
+	if (debug_on){HAL_UART_Transmit(&huart2,(uint8_t *)ATcommand,strlen(ATcommand),1000);}
+	HAL_UART_Transmit(&huart3,(uint8_t *)ATcommand,strlen(ATcommand),1000);
+	HAL_UART_Receive (&huart3, buffer, 256, 100);
+	HAL_Delay(10);
+	memset(buffer,0,sizeof(buffer));
+
+	//save on sim card only
+	sprintf(ATcommand,"AT+CPMS=\"SM\",\"SM\",\"SM\"\r\n");
+	if (debug_on){HAL_UART_Transmit(&huart2,(uint8_t *)ATcommand,strlen(ATcommand),1000);}
+	HAL_UART_Transmit(&huart3,(uint8_t *)ATcommand,strlen(ATcommand),1000);
+	HAL_UART_Receive (&huart3, buffer, 256, 100);
+	HAL_Delay(10);
+	memset(buffer,0,sizeof(buffer));
+
+	//read from SIM card only
+	sprintf(ATcommand,"AT+CPMS=\"SM\"\r\n");
+	if (debug_on){HAL_UART_Transmit(&huart2,(uint8_t *)ATcommand,strlen(ATcommand),1000);}
+	HAL_UART_Transmit(&huart3,(uint8_t *)ATcommand,strlen(ATcommand),1000);
+	HAL_UART_Receive (&huart3, buffer, 256, 100);
+	HAL_Delay(10);
+	memset(buffer,0,sizeof(buffer));
+
+	/*
+	sprintf(ATcommand,"AT+CNMI=1,2,0,0,0\r\n");
+	if (debug_on){HAL_UART_Transmit(&huart2,(uint8_t *)ATcommand,strlen(ATcommand),1000);}
+	HAL_UART_Transmit(&huart3,(uint8_t *)ATcommand,strlen(ATcommand),1000);
+	HAL_Delay(10);
+	*/
+	return 1;
+}
+
+int sim800_send_sms(char str_to_send[], uint8_t debug_on){
+
+	char ATcommand[80];
+	uint8_t buffer[30] = {0};
+
+	if (!sim800_AT_OK(1)){
+		return -1;
+	}
+
+	sprintf(ATcommand,"AT+CMGS=\"%s\"\r\n",mobileNumber);
+	if (debug_on){HAL_UART_Transmit(&huart2,(uint8_t *)ATcommand,strlen(ATcommand),1000);}
+	HAL_UART_Transmit(&huart3,(uint8_t *)ATcommand,strlen(ATcommand),1000);
+	HAL_Delay(10);
+
+	sprintf(ATcommand,"%s%c",str_to_send,26);//,0x1a);
+	if (debug_on){HAL_UART_Transmit(&huart2,(uint8_t *)ATcommand,strlen(ATcommand),1000);}
+	HAL_UART_Transmit(&huart3,(uint8_t *)ATcommand,strlen(ATcommand),1000);
+	HAL_UART_Receive (&huart3, buffer, 30, 100);
+	memset(buffer,0,sizeof(buffer));
+	HAL_Delay(10);
+
+	return 1;
+}
+
+int sim800_read_sms(uint8_t debug_on){
+
+	char ATcommand[80];
+	uint8_t buffer[BUFF_SIZE] = {0};
+
+	if (!sim800_AT_OK(1)){
+		return -1;
+	}
+
+	//list all sms
+	sprintf(ATcommand,"AT+CMGL=\"REC UNREAD\"\r\n");
+	if (debug_on){HAL_UART_Transmit(&huart2,(uint8_t *)ATcommand,strlen(ATcommand),1000);}
+	HAL_UART_Transmit(&huart3,(uint8_t *)ATcommand,strlen(ATcommand),1000);
+	HAL_UART_Receive (&huart3, buffer, BUFF_SIZE, 1000);
+	if (debug_on){HAL_UART_Transmit(&huart2, buffer, BUFF_SIZE, 1000);}
+	HAL_Delay(10);
+	memset(buffer,0,sizeof(buffer));
+
+	return 1;
+}
+
+int sim800_delete_all_sms(uint8_t debug_on){
+
+	char ATcommand[80];
+	uint8_t buffer[30] = {0};
+
+	if (!sim800_AT_OK(1)){
+		return -1;
+	}
+
+	//list all sms
+	sprintf(ATcommand,"AT+CMGDA=\"DEL ALL\"\r\n");
+	if (debug_on){HAL_UART_Transmit(&huart2,(uint8_t *)ATcommand,strlen(ATcommand),1000);}
+	HAL_UART_Transmit(&huart3,(uint8_t *)ATcommand,strlen(ATcommand),1000);
+	HAL_UART_Receive (&huart3, buffer, 30, 1000);
+	if (debug_on){HAL_UART_Transmit(&huart2, buffer, 30, 1000);}
+	HAL_Delay(10);
+	memset(buffer,0,sizeof(buffer));
+
+	return 1;
+}
+
+int sim800_originate_call(uint8_t debug_on){
+
+	char ATcommand[80];
+
+	if (!sim800_AT_OK(1)){
+		return -1;
+	}
+
+	sprintf(ATcommand,"ATD%s;\r\n",mobileNumber);
+	if (debug_on){HAL_UART_Transmit(&huart2,(uint8_t *)ATcommand,strlen(ATcommand),1000);}
+	HAL_UART_Transmit(&huart3,(uint8_t *)ATcommand,strlen(ATcommand),1000);
+	HAL_Delay(20000);
+
+	sprintf(ATcommand,"ATH\r\n");
+	if (debug_on){HAL_UART_Transmit(&huart2,(uint8_t *)ATcommand,strlen(ATcommand),1000);}
+	HAL_UART_Transmit(&huart3,(uint8_t *)ATcommand,strlen(ATcommand),1000);
+	HAL_Delay(10);
+
+	return 1;
+}
+
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -188,7 +314,6 @@ int main(void)
   /* USER CODE BEGIN 2 */
 
   HAL_UART_Receive_DMA (&huart1, (uint8_t*)UART1_rxBuffer, 700);
-  //HAL_UART_Receive_DMA (&huart3, (uint8_t*)sim800_status_str, 50);
 
   /* USER CODE END 2 */
 
@@ -212,11 +337,23 @@ int main(void)
 	//check if flag is on (user button pressed)
 	if (flag == 1){
 
-		//send an sms
-		char str_to_send[]= "We encaspulated this";
-		send_sms(str_to_send);
+		//setup gsm module
+		sim800_setup(1);
 
-	  //reset flag
+		//read sms
+		sim800_read_sms(1);
+
+		//send sms
+		//char str_to_send[]= "We encaspulated this";
+		//sim800_send_sms(str_to_send, 1);
+
+		//delete all sms
+		sim800_delete_all_sms(1);
+
+		//give a call
+		//originate_call(0);
+
+		//reset flag
 		flag = 0;
 	}
 
@@ -460,13 +597,19 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
-/*
+
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
-    HAL_UART_Transmit(&huart2, UART2_rxBuffer, 12, 100);
-    HAL_UART_Receive_DMA(&huart2, UART2_rxBuffer, 12);
+	/*
+	//if (huart == &huart3){
+		char debug_str[] = "In call back DMA 3. Forwarding from SIM800 :\r\n";
+	    HAL_UART_Transmit(&huart2, (uint8_t*) debug_str, strlen(debug_str), 100);
+	    HAL_UART_Transmit(&huart2, UART3_rxBuffer, sizeof(debug_str), 1000);
+	//}
+	 * */
+
 }
-*/
+
 
 void HAL_GPIO_EXTI_Rising_Callback(uint16_t GPIO_Pin)
 {
