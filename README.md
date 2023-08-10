@@ -142,4 +142,95 @@ void HAL_GPIO_EXTI_Rising_Callback(uint16_t GPIO_Pin)
 
 30. The GSM module blinks (1s) 7 to 9 times then shuts down for 2 seconds. It keeps booting up & shuting down. From sources found online, this would indicate an issue with the power supply. The current would be too low when trying to send a burst (2A are required at that moment). We need to re-organize the wiring and to purchase a battery.
 
-31. ??
+### On the 9th of August 23
+
+31. I finally received the material needed for going further in this project :
+  * Step down converter
+  * Balance charger
+  * DC 3.7V 2100 mAh power supply
+  * Minimum STM32 dev boards (STM32F103C8T6)
+  * STM32 programmer dongle
+  
+  I charged the battery and soldered the default connections to some jumper wires. I connected the SIM 800 L GSM module to the battery and after a few seconds, the module's led blinks every 3s (meaning the connection to the network is established). This confirms the hypothesis made on point 30.
+
+32. I took some time to realize it's no good idea to use blocking function inside an interrupt function. As an example, the following code :
+```
+while (1)
+{
+  //if flag is on, check sim 800 module state
+  if (flag == 1){
+    //transmit to pc we hit this block
+    HAL_UART_Transmit(&huart2, (uint8_t*) sim800_test_str, 50, 100);
+    //transmit check str to sim 800 module
+    HAL_UART_Transmit(&huart3, (uint8_t*) sim800_test_str, 50, 100);
+    //wait for reception
+    HAL_UART_Receive(&huart3, (uint8_t*) UART3_rxBuffer, 700, 1000);
+    //transmit status to PC
+    HAL_UART_Transmit(&huart2, (uint8_t*) UART3_rxBuffer, 700, 100);
+
+    //reset flag
+    flag = 0;
+}
+
+void HAL_GPIO_EXTI_Rising_Callback(uint16_t GPIO_Pin)
+{
+  if(GPIO_Pin == GPIO_PIN_13) {
+    //switch led on
+    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_SET);
+    //set flag on
+    flag = 1;
+  } else {
+      __NOP();
+  }
+}
+```
+
+should be prefered above this code :
+
+```
+while (1)
+{
+  ...
+}
+
+void HAL_GPIO_EXTI_Rising_Callback(uint16_t GPIO_Pin)
+{
+  if(GPIO_Pin == GPIO_PIN_13) {
+    //switch led on
+    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_SET);
+
+    //transmit to pc we hit this block
+    HAL_UART_Transmit(&huart2, (uint8_t*) sim800_test_str, 50, 100);
+    //transmit check str to sim 800 module
+    HAL_UART_Transmit(&huart3, (uint8_t*) sim800_test_str, 50, 100);
+    //wait for reception
+    HAL_UART_Receive(&huart3, (uint8_t*) UART3_rxBuffer, 700, 1000);
+    //transmit status to PC
+    HAL_UART_Transmit(&huart2, (uint8_t*) UART3_rxBuffer, 700, 100);
+    
+  } else {
+      __NOP();
+  }
+}
+```
+
+This to prevent the controller to get stuck at some point in its time management.
+
+33. I lost at least 3 hours to figure out that AT commands should be sent with the terminator ``\r\n`` and not with ``\n\r``. Once this was implemented, I could successfully interact with the gsm module (receive OK feedback).
+
+34. I found [here](https://www.faranux.com/wp-content/uploads/2016/12/SIM800-Series_AT-Command-Manual_V1.09.pdf) a very useful document informing how to write AT commands.
+
+35. I still can't send an sms with the commands sent. Here is what I obtain :
+
+  * "AT;+CMGF=1\r\n" ==> OK after 5s
+  * "AT;+CMGF=1;+CMGS=\"+32456413932\"\r\n" ==> ERROR
+
+I found that I need to give the module some time to boot. I suspect faulty contacts at UART RX TX.
+
+### On the 10th of August 2023
+
+36. I borrowed code from [here](https://www.micropeta.com/video10), tweeked it a little (with extra delays) and got the module to send an sms.
+
+
+
+

@@ -37,9 +37,18 @@
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 uint8_t UART1_rxBuffer[BUFF_SIZE] = {0};
+uint8_t UART3_rxBuffer[BUFF_SIZE] = {0};
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart);
 char nmea_raw_data[BUFF_SIZE];
 char loc_str[50] = " ";
+char sim800_test_str[50] = "AT\r\n";//This is an sms\&\n\r";%%%%;+CMGS=\"+320456413932\"\r%%%%
+char text_mode[50] = "AT;+CMGF=1\r\n";
+char phone_info[50] = "AT+CMGS=\"+32456413932\"\r";
+char sms_text[50] = "This is an sms";
+uint8_t ctrlZ = 26;
+
+char sim800_status_str[50] = " ";
+int flag = 0;
 
 /* USER CODE END PD */
 
@@ -51,6 +60,7 @@ char loc_str[50] = " ";
 /* Private variables ---------------------------------------------------------*/
  UART_HandleTypeDef huart1;
 UART_HandleTypeDef huart2;
+UART_HandleTypeDef huart3;
 DMA_HandleTypeDef hdma_usart1_rx;
 
 /* USER CODE BEGIN PV */
@@ -63,6 +73,7 @@ static void MX_GPIO_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_DMA_Init(void);
 static void MX_USART1_UART_Init(void);
+static void MX_USART3_UART_Init(void);
 /* USER CODE BEGIN PFP */
 
 float convert_DDmm_to_DDD(float DDmm, char *sign){
@@ -104,6 +115,19 @@ void extract_location_from_nmea_raw_data(char nmea_raw_data[], char *loc_str[]){
 
 }
 
+void send_and_receive(char str_to_send[]){
+	//transmit to pc we hit this block
+	HAL_UART_Transmit(&huart2, (uint8_t*) str_to_send, 50, 100);
+	//transmit check str to sim 800 module
+	HAL_UART_Transmit(&huart3, (uint8_t*) str_to_send, 50, 1000);
+	//wait for reception
+	HAL_UART_Receive(&huart3, (uint8_t*) UART3_rxBuffer, 700, 8000);
+	//transmit status to PC
+	HAL_UART_Transmit(&huart2, (uint8_t*) UART3_rxBuffer, 700, 100);
+	//buffer reset here
+	memset(UART3_rxBuffer,0,sizeof(UART3_rxBuffer));
+}
+
 
 /* USER CODE END PFP */
 
@@ -143,9 +167,11 @@ int main(void)
   MX_USART2_UART_Init();
   MX_DMA_Init();
   MX_USART1_UART_Init();
+  MX_USART3_UART_Init();
   /* USER CODE BEGIN 2 */
 
   HAL_UART_Receive_DMA (&huart1, (uint8_t*)UART1_rxBuffer, 700);
+  //HAL_UART_Receive_DMA (&huart3, (uint8_t*)sim800_status_str, 50);
 
   /* USER CODE END 2 */
 
@@ -166,6 +192,78 @@ int main(void)
 	//transmit formatted location to PC
 	//next line is commented for debug of SIM 800L device
 	//HAL_UART_Transmit(&huart2, (uint8_t*) loc_str, 50, 100);
+
+	//if flag is on, check sim 800 module state
+	if (flag == 1){
+		/*
+		//transmit to pc we hit this block
+		HAL_UART_Transmit(&huart2, (uint8_t*) sim800_test_str, 50, 100);
+		//transmit check str to sim 800 module
+		HAL_UART_Transmit(&huart3, (uint8_t*) sim800_test_str, 50, 100);
+		//wait for reception
+		HAL_UART_Receive(&huart3, (uint8_t*) UART3_rxBuffer, 700, 1000);
+		//transmit status to PC
+		HAL_UART_Transmit(&huart2, (uint8_t*) UART3_rxBuffer, 700, 100);
+		*/
+		/*
+		//try sending an sms
+		HAL_UART_Transmit(&huart3, (uint8_t*) text_mode, sizeof(text_mode), 100);
+		HAL_Delay(500);
+		HAL_UART_Transmit(&huart3, (uint8_t*) phone_info, sizeof(phone_info), 100);
+		HAL_Delay(500);
+		HAL_UART_Transmit(&huart3, (uint8_t*) sms_text, sizeof(sms_text), 100);
+		*/
+
+		/*
+		send_and_receive(sim800_test_str);
+		HAL_Delay(1000);
+		send_and_receive(text_mode);
+		HAL_Delay(1000);
+		send_and_receive(phone_info);
+		HAL_Delay(1000);
+		//send_and_receive(sms_text);
+		HAL_Delay(1000);
+		//send_and_receive((char) ctrlZ);
+		HAL_Delay(1000);
+		*/
+
+		  char mobileNumber[] = "+32456413932";  // Enter the Mobile Number you want to send to
+		  char ATcommand[80];
+		  uint8_t buffer[30] = {0};
+		  uint8_t ATisOK = 0;
+		  while(!ATisOK){
+				sprintf(ATcommand,"AT\r\n");
+				HAL_UART_Transmit(&huart2,(uint8_t *)ATcommand,strlen(ATcommand),1000);
+				HAL_UART_Transmit(&huart3,(uint8_t *)ATcommand,strlen(ATcommand),1000);
+				HAL_UART_Receive (&huart3, buffer, 30, 10000);
+				HAL_Delay(1000);
+				if(strstr((char *)buffer,"OK")){
+					ATisOK = 1;
+				}
+				HAL_Delay(1000);
+				memset(buffer,0,sizeof(buffer));
+		  }
+		  sprintf(ATcommand,"AT+CMGF=1\r\n");
+		  HAL_UART_Transmit(&huart2,(uint8_t *)ATcommand,strlen(ATcommand),1000);
+		  HAL_UART_Transmit(&huart3,(uint8_t *)ATcommand,strlen(ATcommand),1000);
+		  HAL_UART_Receive (&huart3, buffer, 30, 100);
+		  HAL_Delay(1000);
+		  memset(buffer,0,sizeof(buffer));
+		  sprintf(ATcommand,"AT+CMGS=\"%s\"\r\n",mobileNumber);
+		  HAL_UART_Transmit(&huart2,(uint8_t *)ATcommand,strlen(ATcommand),1000);
+		  HAL_UART_Transmit(&huart3,(uint8_t *)ATcommand,strlen(ATcommand),1000);
+		  HAL_Delay(100);
+		  sprintf(ATcommand,"Hello World, STM32 started%c",26);//,0x1a);
+		  HAL_UART_Transmit(&huart2,(uint8_t *)ATcommand,strlen(ATcommand),1000);
+		  HAL_UART_Transmit(&huart3,(uint8_t *)ATcommand,strlen(ATcommand),1000);
+		  HAL_UART_Receive (&huart3, buffer, 30, 100);
+		  memset(buffer,0,sizeof(buffer));
+		  HAL_Delay(4000);
+
+		//reset flag
+		flag = 0;
+	}
+
 
     /* USER CODE END WHILE */
 
@@ -278,7 +376,7 @@ static void MX_USART2_UART_Init(void)
 
   /* USER CODE END USART2_Init 1 */
   huart2.Instance = USART2;
-  huart2.Init.BaudRate = 38400;
+  huart2.Init.BaudRate = 9600;
   huart2.Init.WordLength = UART_WORDLENGTH_8B;
   huart2.Init.StopBits = UART_STOPBITS_1;
   huart2.Init.Parity = UART_PARITY_NONE;
@@ -311,6 +409,42 @@ static void MX_USART2_UART_Init(void)
 }
 
 /**
+  * @brief USART3 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_USART3_UART_Init(void)
+{
+
+  /* USER CODE BEGIN USART3_Init 0 */
+
+  /* USER CODE END USART3_Init 0 */
+
+  /* USER CODE BEGIN USART3_Init 1 */
+
+  /* USER CODE END USART3_Init 1 */
+  huart3.Instance = USART3;
+  huart3.Init.BaudRate = 9600;
+  huart3.Init.WordLength = UART_WORDLENGTH_8B;
+  huart3.Init.StopBits = UART_STOPBITS_1;
+  huart3.Init.Parity = UART_PARITY_NONE;
+  huart3.Init.Mode = UART_MODE_TX_RX;
+  huart3.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart3.Init.OverSampling = UART_OVERSAMPLING_16;
+  huart3.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
+  huart3.Init.ClockPrescaler = UART_PRESCALER_DIV1;
+  huart3.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
+  if (HAL_UART_Init(&huart3) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN USART3_Init 2 */
+
+  /* USER CODE END USART3_Init 2 */
+
+}
+
+/**
   * Enable DMA controller clock
   */
 static void MX_DMA_Init(void)
@@ -339,6 +473,7 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOC_CLK_ENABLE();
   __HAL_RCC_GPIOF_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
+  __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOA, LED_GREEN_Pin|GPIO_PIN_10, GPIO_PIN_RESET);
@@ -381,9 +516,12 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 void HAL_GPIO_EXTI_Rising_Callback(uint16_t GPIO_Pin)
 {
   if(GPIO_Pin == GPIO_PIN_13) {
+	//turn gps module on
     HAL_GPIO_WritePin(GPIOA, GPIO_PIN_10, GPIO_PIN_SET);
+    //switch led on
     HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_SET);
-    //HAL_UART_Transmit(&huart2, (uint8_t*) loc_str, 50, 100);
+    //set flag on
+    flag = 1;
   } else {
       __NOP();
   }
