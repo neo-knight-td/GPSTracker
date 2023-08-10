@@ -37,18 +37,11 @@
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 uint8_t UART1_rxBuffer[BUFF_SIZE] = {0};
-uint8_t UART3_rxBuffer[BUFF_SIZE] = {0};
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart);
 char nmea_raw_data[BUFF_SIZE];
 char loc_str[50] = " ";
-char sim800_test_str[50] = "AT\r\n";//This is an sms\&\n\r";%%%%;+CMGS=\"+320456413932\"\r%%%%
-char text_mode[50] = "AT;+CMGF=1\r\n";
-char phone_info[50] = "AT+CMGS=\"+32456413932\"\r";
-char sms_text[50] = "This is an sms";
-uint8_t ctrlZ = 26;
-
-char sim800_status_str[50] = " ";
 int flag = 0;
+char mobileNumber[] = "+32456413932";
 
 /* USER CODE END PD */
 
@@ -115,20 +108,44 @@ void extract_location_from_nmea_raw_data(char nmea_raw_data[], char *loc_str[]){
 
 }
 
-void send_and_receive(char str_to_send[]){
-	//transmit to pc we hit this block
-	HAL_UART_Transmit(&huart2, (uint8_t*) str_to_send, 50, 100);
-	//transmit check str to sim 800 module
-	HAL_UART_Transmit(&huart3, (uint8_t*) str_to_send, 50, 1000);
-	//wait for reception
-	HAL_UART_Receive(&huart3, (uint8_t*) UART3_rxBuffer, 700, 8000);
-	//transmit status to PC
-	HAL_UART_Transmit(&huart2, (uint8_t*) UART3_rxBuffer, 700, 100);
-	//buffer reset here
-	memset(UART3_rxBuffer,0,sizeof(UART3_rxBuffer));
+int send_sms(char str_to_send[]){
+
+	char ATcommand[80];
+	uint8_t buffer[30] = {0};
+	uint8_t ATisOK = 0;
+
+	while(!ATisOK){
+		sprintf(ATcommand,"AT\r\n");
+		HAL_UART_Transmit(&huart2,(uint8_t *)ATcommand,strlen(ATcommand),1000);
+		HAL_UART_Transmit(&huart3,(uint8_t *)ATcommand,strlen(ATcommand),1000);
+		HAL_UART_Receive (&huart3, buffer, 30, 1000);
+		HAL_Delay(10);
+
+		if(strstr((char *)buffer,"OK")){
+			ATisOK = 1;
+		}
+
+		HAL_Delay(10);
+		memset(buffer,0,sizeof(buffer));
+	}
+
+	sprintf(ATcommand,"AT+CMGF=1\r\n");
+	HAL_UART_Transmit(&huart2,(uint8_t *)ATcommand,strlen(ATcommand),1000);
+	HAL_UART_Transmit(&huart3,(uint8_t *)ATcommand,strlen(ATcommand),1000);
+	HAL_UART_Receive (&huart3, buffer, 30, 100);
+	HAL_Delay(10);
+	memset(buffer,0,sizeof(buffer));
+	sprintf(ATcommand,"AT+CMGS=\"%s\"\r\n",mobileNumber);
+	HAL_UART_Transmit(&huart2,(uint8_t *)ATcommand,strlen(ATcommand),1000);
+	HAL_UART_Transmit(&huart3,(uint8_t *)ATcommand,strlen(ATcommand),1000);
+	HAL_Delay(10);
+	sprintf(ATcommand,"%s%c",str_to_send,26);//,0x1a);
+	HAL_UART_Transmit(&huart2,(uint8_t *)ATcommand,strlen(ATcommand),1000);
+	HAL_UART_Transmit(&huart3,(uint8_t *)ATcommand,strlen(ATcommand),1000);
+	HAL_UART_Receive (&huart3, buffer, 30, 100);
+	memset(buffer,0,sizeof(buffer));
+	HAL_Delay(10);
 }
-
-
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -190,80 +207,18 @@ int main(void)
 	extract_location_from_nmea_raw_data(nmea_raw_data, &loc_str);
 
 	//transmit formatted location to PC
-	//next line is commented for debug of SIM 800L device
 	//HAL_UART_Transmit(&huart2, (uint8_t*) loc_str, 50, 100);
 
-	//if flag is on, check sim 800 module state
+	//check if flag is on (user button pressed)
 	if (flag == 1){
-		/*
-		//transmit to pc we hit this block
-		HAL_UART_Transmit(&huart2, (uint8_t*) sim800_test_str, 50, 100);
-		//transmit check str to sim 800 module
-		HAL_UART_Transmit(&huart3, (uint8_t*) sim800_test_str, 50, 100);
-		//wait for reception
-		HAL_UART_Receive(&huart3, (uint8_t*) UART3_rxBuffer, 700, 1000);
-		//transmit status to PC
-		HAL_UART_Transmit(&huart2, (uint8_t*) UART3_rxBuffer, 700, 100);
-		*/
-		/*
-		//try sending an sms
-		HAL_UART_Transmit(&huart3, (uint8_t*) text_mode, sizeof(text_mode), 100);
-		HAL_Delay(500);
-		HAL_UART_Transmit(&huart3, (uint8_t*) phone_info, sizeof(phone_info), 100);
-		HAL_Delay(500);
-		HAL_UART_Transmit(&huart3, (uint8_t*) sms_text, sizeof(sms_text), 100);
-		*/
 
-		/*
-		send_and_receive(sim800_test_str);
-		HAL_Delay(1000);
-		send_and_receive(text_mode);
-		HAL_Delay(1000);
-		send_and_receive(phone_info);
-		HAL_Delay(1000);
-		//send_and_receive(sms_text);
-		HAL_Delay(1000);
-		//send_and_receive((char) ctrlZ);
-		HAL_Delay(1000);
-		*/
+		//send an sms
+		char str_to_send[]= "We encaspulated this";
+		send_sms(str_to_send);
 
-		  char mobileNumber[] = "+32456413932";  // Enter the Mobile Number you want to send to
-		  char ATcommand[80];
-		  uint8_t buffer[30] = {0};
-		  uint8_t ATisOK = 0;
-		  while(!ATisOK){
-				sprintf(ATcommand,"AT\r\n");
-				HAL_UART_Transmit(&huart2,(uint8_t *)ATcommand,strlen(ATcommand),1000);
-				HAL_UART_Transmit(&huart3,(uint8_t *)ATcommand,strlen(ATcommand),1000);
-				HAL_UART_Receive (&huart3, buffer, 30, 10000);
-				HAL_Delay(1000);
-				if(strstr((char *)buffer,"OK")){
-					ATisOK = 1;
-				}
-				HAL_Delay(1000);
-				memset(buffer,0,sizeof(buffer));
-		  }
-		  sprintf(ATcommand,"AT+CMGF=1\r\n");
-		  HAL_UART_Transmit(&huart2,(uint8_t *)ATcommand,strlen(ATcommand),1000);
-		  HAL_UART_Transmit(&huart3,(uint8_t *)ATcommand,strlen(ATcommand),1000);
-		  HAL_UART_Receive (&huart3, buffer, 30, 100);
-		  HAL_Delay(1000);
-		  memset(buffer,0,sizeof(buffer));
-		  sprintf(ATcommand,"AT+CMGS=\"%s\"\r\n",mobileNumber);
-		  HAL_UART_Transmit(&huart2,(uint8_t *)ATcommand,strlen(ATcommand),1000);
-		  HAL_UART_Transmit(&huart3,(uint8_t *)ATcommand,strlen(ATcommand),1000);
-		  HAL_Delay(100);
-		  sprintf(ATcommand,"Hello World, STM32 started%c",26);//,0x1a);
-		  HAL_UART_Transmit(&huart2,(uint8_t *)ATcommand,strlen(ATcommand),1000);
-		  HAL_UART_Transmit(&huart3,(uint8_t *)ATcommand,strlen(ATcommand),1000);
-		  HAL_UART_Receive (&huart3, buffer, 30, 100);
-		  memset(buffer,0,sizeof(buffer));
-		  HAL_Delay(4000);
-
-		//reset flag
+	  //reset flag
 		flag = 0;
 	}
-
 
     /* USER CODE END WHILE */
 
