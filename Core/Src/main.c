@@ -117,13 +117,13 @@ int sim800_AT_OK(uint8_t debug_on){
 	uint8_t buffer[30] = {0};
 	uint8_t ATisOK = 0;
 	uint8_t count = 0;
-	uint8_t timeout = 10;
+	uint8_t timeout = 3;
 
 	while(!ATisOK){
 
 		if (debug_on){HAL_UART_Transmit(&huart2,(uint8_t *)ATcommand,strlen(ATcommand),1000);}
-		HAL_UART_Transmit(&huart3,(uint8_t *)ATcommand,strlen(ATcommand),1000);
-		HAL_UART_Receive (&huart3, buffer, 30, 2000);
+		HAL_UART_Transmit(&huart3,(uint8_t *)ATcommand,strlen(ATcommand),100);
+		HAL_UART_Receive (&huart3, buffer, 30, 5000);
 		HAL_Delay(10);
 
 		if(strstr((char *)buffer,"OK")){
@@ -162,14 +162,6 @@ int sim800_setup(uint8_t debug_on){
 
 	//save on sim card only
 	sprintf(ATcommand,"AT+CPMS=\"SM\",\"SM\",\"SM\"\r\n");
-	if (debug_on){HAL_UART_Transmit(&huart2,(uint8_t *)ATcommand,strlen(ATcommand),1000);}
-	HAL_UART_Transmit(&huart3,(uint8_t *)ATcommand,strlen(ATcommand),1000);
-	HAL_UART_Receive (&huart3, buffer, 256, 100);
-	HAL_Delay(10);
-	memset(buffer,0,sizeof(buffer));
-
-	//read from SIM card only
-	sprintf(ATcommand,"AT+CPMS=\"SM\"\r\n");
 	if (debug_on){HAL_UART_Transmit(&huart2,(uint8_t *)ATcommand,strlen(ATcommand),1000);}
 	HAL_UART_Transmit(&huart3,(uint8_t *)ATcommand,strlen(ATcommand),1000);
 	HAL_UART_Receive (&huart3, buffer, 256, 100);
@@ -312,6 +304,8 @@ int main(void)
   MX_USART1_UART_Init();
   MX_USART3_UART_Init();
   /* USER CODE BEGIN 2 */
+  //setup gsm module
+  sim800_setup(1);
 
   HAL_UART_Receive_DMA (&huart1, (uint8_t*)UART1_rxBuffer, 700);
 
@@ -332,23 +326,19 @@ int main(void)
 	extract_location_from_nmea_raw_data(nmea_raw_data, &loc_str);
 
 	//transmit formatted location to PC
-	//HAL_UART_Transmit(&huart2, (uint8_t*) loc_str, 50, 100);
+	HAL_UART_Transmit(&huart2, (uint8_t*) loc_str, 50, 100);
 
 	//check if flag is on (user button pressed)
-	if (flag == 1){
-
-		//setup gsm module
-		sim800_setup(1);
+	if (flag == 1 && strlen(loc_str) > 10){
 
 		//read sms
-		sim800_read_sms(1);
+		//sim800_read_sms(1);
 
 		//send sms
-		//char str_to_send[]= "We encaspulated this";
-		//sim800_send_sms(str_to_send, 1);
+		sim800_send_sms(loc_str, 0);
 
 		//delete all sms
-		sim800_delete_all_sms(1);
+		//sim800_delete_all_sms(1);
 
 		//give a call
 		//originate_call(0);
@@ -570,6 +560,12 @@ static void MX_GPIO_Init(void)
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOA, LED_GREEN_Pin|GPIO_PIN_10, GPIO_PIN_RESET);
 
+  /*Configure GPIO pin : RING_Pin */
+  GPIO_InitStruct.Pin = RING_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(RING_GPIO_Port, &GPIO_InitStruct);
+
   /*Configure GPIO pin : B1_Pin */
   GPIO_InitStruct.Pin = B1_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
@@ -613,13 +609,34 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 
 void HAL_GPIO_EXTI_Rising_Callback(uint16_t GPIO_Pin)
 {
-  if(GPIO_Pin == GPIO_PIN_13) {
+
+	if(GPIO_Pin == GPIO_PIN_13) {
+	//switch led on
+	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_SET);
 	//turn gps module on
     HAL_GPIO_WritePin(GPIOA, GPIO_PIN_10, GPIO_PIN_SET);
-    //switch led on
-    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_SET);
-    //set flag on
-    flag = 1;
+
+  } else {
+      __NOP();
+  }
+}
+
+void HAL_GPIO_EXTI_Falling_Callback(uint16_t GPIO_Pin)
+{
+  if(GPIO_Pin == GPIO_PIN_12) {
+
+	//switch led on
+	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_SET);
+	//Wait 100 ms
+	HAL_Delay(100);
+	//switch led off
+	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_RESET);
+	//turn gps module on
+	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_10, GPIO_PIN_SET);
+
+	//set flag on
+	flag = 1;
+
   } else {
       __NOP();
   }
