@@ -234,6 +234,53 @@ I found that I need to give the module some time to boot. I suspect faulty conta
 
 36. I borrowed code from [here](https://www.micropeta.com/video10), tweeked it a little (with extra delays) and got the module to send an sms.
 
+### On the 11 of August 2023
+
+37. I made a buch of functions for controlling the sim800 :
+  * ```sim800_AT_OK(uint8_t debug_on)```
+  * ```sim800_setup(char str_to_send[], uint8_t debug_on)```
+  * ```sim800_send_sms(uint8_t debug_on)```
+  * ```sim800_read_sms(uint8_t debug_on)```
+  * ```sim800_delete_all_sms(uint8_t debug_on)```
+  * ```sim800_originate_call(uint8_t debug_on)```
+
+and one function to extract location from the gps module :
+  * ```m8n_read_location(char nmea_raw_data[], char *loc_str[])```
 
 
+  With these, I was able to complete a first version of the first stage of the project : the tracing capability. Whenever an sms is received by the sim800, the gps module is turned on and an sms is sent to my phone number. I am using the "RING" pin on the sim800 to detect an incoming sms. This pin was connected to the EXTI12 of the SIM32. 
+  
+  One issue is that the voltage sometimes drops inadvertently on pin RING (most probably due to the wrong pin connection, as it's not soldered yet). Therefore I am going to code a "false alert detection" feature that reads the last sms sent and if none exist or if last one dates of more than 15 seconds, detect the false alert and prevent sms from being sent.
+
+  38. When reading all sms from sim800 :
+
+  ```
+  +CMGL: 1,"REC READ","+32456413932","","23/08/11,14:14:29+08"
+Trace my bike
+
++CMGL: 2,"REC READ","+32456413932","","23/08/11,12:44:15+08"
+Where is my bike ?
+
++CMGL: 3,"REC READ","+32456413932","","23/08/11,12:36:06+08"
+Where is my bike ?
+
++CMGL: 4,"REC READ","+32456413932","","23/08/10,20:44:58+08"
+Damn hell position 
+
++CMGL: 5,"REC READ","+32456413932","","23/08/11,13:46:18+08"
+Where is my bike?
+
++CMGL: 6,"REC READ","+32456413932","","23/08/10,21:00:09+08"
+Pos
+
++CMGL: 7,"REC READ","+32456413932","","23/08/11,14:18:59+08"
+This is the last sms
+
++CMGL: 8,"REC READ","+32456413932","","23/08/11,14:21:05+08"
+Bbb
+```
+
+39. 2 strange things :
+  * I can't delete messages from the memory with the function ```sim800_delete_all_sms(uint8_t debug_on)```
+  * Newly arrived sms are not always available when reading the unread messages : ```"AT+CMGL=\"REC UNREAD\"\r\n"``` 
 

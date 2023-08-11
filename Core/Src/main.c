@@ -178,7 +178,7 @@ int sim800_AT_OK(uint8_t debug_on){
 
 		if (debug_on){HAL_UART_Transmit(&huart2,(uint8_t *)ATcommand,strlen(ATcommand),1000);}
 		HAL_UART_Transmit(&huart3,(uint8_t *)ATcommand,strlen(ATcommand),100);
-		HAL_UART_Receive (&huart3, buffer, 30, 5000);
+		HAL_UART_Receive (&huart3, buffer, 30, 8000);
 		HAL_Delay(10);
 
 		if(strstr((char *)buffer,"OK")){
@@ -196,7 +196,6 @@ int sim800_AT_OK(uint8_t debug_on){
 
 	return 1;
 }
-
 
 int sim800_setup(uint8_t debug_on){
 
@@ -266,10 +265,10 @@ int sim800_read_sms(uint8_t debug_on){
 	}
 
 	//list all sms
-	sprintf(ATcommand,"AT+CMGL=\"REC UNREAD\"\r\n");
+	sprintf(ATcommand,"AT+CMGL=\"REC UNREAD\"\r\n");//ALL
 	if (debug_on){HAL_UART_Transmit(&huart2,(uint8_t *)ATcommand,strlen(ATcommand),1000);}
 	HAL_UART_Transmit(&huart3,(uint8_t *)ATcommand,strlen(ATcommand),1000);
-	HAL_UART_Receive (&huart3, buffer, BUFF_SIZE, 1000);
+	HAL_UART_Receive (&huart3, buffer, BUFF_SIZE, 5000);
 	if (debug_on){HAL_UART_Transmit(&huart2, buffer, BUFF_SIZE, 1000);}
 	HAL_Delay(10);
 	memset(buffer,0,sizeof(buffer));
@@ -387,13 +386,13 @@ int main(void)
 
 
 	//check if flag is on (user button pressed)
-	if (flag == 1 && gps_lock >= gps_lock_th){
+	if (flag == 1){// && gps_lock >= gps_lock_th){
 
 		//read sms
-		//sim800_read_sms(1);
+		sim800_read_sms(1);
 
 		//send sms
-		sim800_send_sms(loc_str, 1);
+		//sim800_send_sms(loc_str, 1);
 
 		//delete all sms
 		//sim800_delete_all_sms(1);
@@ -669,7 +668,7 @@ void HAL_GPIO_EXTI_Rising_Callback(uint16_t GPIO_Pin)
 {
 
 	if(GPIO_Pin == GPIO_PIN_13) {
-	/*
+
 		//switch led on
 		HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_SET);
 		//Wait 100 ms
@@ -677,11 +676,11 @@ void HAL_GPIO_EXTI_Rising_Callback(uint16_t GPIO_Pin)
 		//switch led off
 		//HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_RESET);
 		//turn gps module on
-		HAL_GPIO_WritePin(GPIOA, GPIO_PIN_10, GPIO_PIN_SET);
+		//HAL_GPIO_WritePin(GPIOA, GPIO_PIN_10, GPIO_PIN_SET);
 
 		//set flag on
 		flag = 1;
-	*/
+
 
   } else {
       __NOP();
@@ -691,19 +690,15 @@ void HAL_GPIO_EXTI_Rising_Callback(uint16_t GPIO_Pin)
 void HAL_GPIO_EXTI_Falling_Callback(uint16_t GPIO_Pin)
 {
   if(GPIO_Pin == GPIO_PIN_12) {
-
+	  	//commented out this code to avoid false alerts
+	    /*
 		//switch led on
-		HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_SET);
-		//Wait 100 ms
-		//HAL_Delay(100);
-		//switch led off
-		//HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_RESET);
+		//HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_SET);
 		//turn gps module on
-		HAL_GPIO_WritePin(GPIOA, GPIO_PIN_10, GPIO_PIN_SET);
-
+		//HAL_GPIO_WritePin(GPIOA, GPIO_PIN_10, GPIO_PIN_SET);
 		//set flag on
-		flag = 1;
-
+		//flag = 1;
+		*/
 
   } else {
       __NOP();
