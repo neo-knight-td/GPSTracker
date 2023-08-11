@@ -41,6 +41,8 @@ uint8_t UART3_rxBuffer[BUFF_SIZE] = {0};
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart);
 char nmea_raw_data[BUFF_SIZE];
 char loc_str[50] = " ";
+int gps_lock = 0;
+int gps_lock_th = 20;
 int flag = 0;
 char mobileNumber[] = "+32456413932";
 
@@ -85,7 +87,7 @@ float convert_DDmm_to_DDD(float DDmm, char *sign){
     return DDD;
 }
 
-void extract_location_from_nmea_raw_data(char nmea_raw_data[], char *loc_str[]){
+void m8n_read_location(char nmea_raw_data[], char *loc_str[]){
 
     const __uint8_t GLL_MSG_LEN = 47;
 
@@ -97,15 +99,68 @@ void extract_location_from_nmea_raw_data(char nmea_raw_data[], char *loc_str[]){
     start_GLL_msg = strstr(nmea_raw_data, "GLL");
     len_GLL_msg = strlen(start_GLL_msg);
 
+    *loc_str = "";
+
     //message is not valid as does not have minimum length
     if (len_GLL_msg < GLL_MSG_LEN){
-        *loc_str = "";
         return;
     }
 
+    //retreive location parameters from nmea sentence
     sscanf(start_GLL_msg, "GLL,%f,%c,%f,%c,",&latitude, &lat_sign, &longitude, &long_sign);
 
-    sprintf(loc_str, "%f,%f\r\n",convert_DDmm_to_DDD(latitude,&lat_sign),convert_DDmm_to_DDD(longitude,&long_sign));
+    //if one of the lat or long is equal to 0, reset lock value and return
+    if (latitude == 0 || longitude == 0){
+        gps_lock = 0;
+        //*loc_str = "";
+
+        char sentence[50] = "";
+        sprintf(sentence,"%Inconsistent, lock = %i\r\n",gps_lock);
+        HAL_UART_Transmit(&huart2, (uint8_t*) sentence, strlen(sentence), 100);
+        //HAL_UART_Transmit(&huart2, (uint8_t*) *loc_str, strlen(*loc_str), 100);
+
+        return;
+    }
+
+    //if one of the lat or long is nan (https://stackoverflow.com/a/570694), reset lock value and return
+    else if (latitude != latitude || longitude != longitude){
+        gps_lock = 0;
+        //*loc_str = "";
+
+        char sentence[50] = "";
+        sprintf(sentence,"%NaN, lock = %i\r\n",gps_lock);
+        HAL_UART_Transmit(&huart2, (uint8_t*) sentence, strlen(sentence), 100);
+        //HAL_UART_Transmit(&huart2, (uint8_t*) *loc_str, strlen(*loc_str), 100);
+
+        return;
+    }
+
+	//copy location parameters into loc_str under desired format
+	sprintf(loc_str, "%f,%f\r\n",convert_DDmm_to_DDD(latitude,&lat_sign),convert_DDmm_to_DDD(longitude,&long_sign));
+
+    //if number of gps lock is still below threshold, increment lock value and return
+    if (gps_lock < gps_lock_th){
+        gps_lock++;
+
+        char sentence[50] = "";
+        sprintf(sentence,"%OK, below threshold, lock = %i\r\n",gps_lock);
+        HAL_UART_Transmit(&huart2, (uint8_t*) sentence, strlen(sentence), 100);
+        //HAL_UART_Transmit(&huart2, (uint8_t*) *loc_str, strlen(*loc_str), 100);
+
+        return;
+    }
+
+    //if nb of consecutive locks is above threshold
+    else if (gps_lock >= gps_lock_th){
+    	gps_lock = gps_lock_th;
+
+        char sentence[50] = "";
+        sprintf(sentence,"All OK, lock = %i\r\n",gps_lock);
+        HAL_UART_Transmit(&huart2, (uint8_t*) sentence, strlen(sentence), 100);
+        //HAL_UART_Transmit(&huart2, (uint8_t*) *loc_str, strlen(*loc_str), 100);
+
+        return;
+    }
 
 }
 
@@ -323,19 +378,22 @@ int main(void)
     }
 
     //extract location under "DDD,DDD" format
-	extract_location_from_nmea_raw_data(nmea_raw_data, &loc_str);
+    m8n_read_location(nmea_raw_data, &loc_str);
 
-	//transmit formatted location to PC
-	HAL_UART_Transmit(&huart2, (uint8_t*) loc_str, 50, 100);
+	//transmit formatted location to PC if gps is locked
+	//HAL_UART_Transmit(&huart2, (uint8_t*) gps_lock, sizeof(gps_lock), 100);
+	//HAL_UART_Transmit(&huart2, (uint8_t*) loc_str, sizeof(loc_str), 100);
+	//HAL_UART_Transmit(&huart2, (uint8_t*) gps_lock, sizeof(gps_lock), 100);
+
 
 	//check if flag is on (user button pressed)
-	if (flag == 1 && strlen(loc_str) > 10){
+	if (flag == 1 && gps_lock >= gps_lock_th){
 
 		//read sms
 		//sim800_read_sms(1);
 
 		//send sms
-		sim800_send_sms(loc_str, 0);
+		sim800_send_sms(loc_str, 1);
 
 		//delete all sms
 		//sim800_delete_all_sms(1);
@@ -611,10 +669,19 @@ void HAL_GPIO_EXTI_Rising_Callback(uint16_t GPIO_Pin)
 {
 
 	if(GPIO_Pin == GPIO_PIN_13) {
-	//switch led on
-	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_SET);
-	//turn gps module on
-    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_10, GPIO_PIN_SET);
+	/*
+		//switch led on
+		HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_SET);
+		//Wait 100 ms
+		//HAL_Delay(100);
+		//switch led off
+		//HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_RESET);
+		//turn gps module on
+		HAL_GPIO_WritePin(GPIOA, GPIO_PIN_10, GPIO_PIN_SET);
+
+		//set flag on
+		flag = 1;
+	*/
 
   } else {
       __NOP();
@@ -625,17 +692,18 @@ void HAL_GPIO_EXTI_Falling_Callback(uint16_t GPIO_Pin)
 {
   if(GPIO_Pin == GPIO_PIN_12) {
 
-	//switch led on
-	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_SET);
-	//Wait 100 ms
-	HAL_Delay(100);
-	//switch led off
-	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_RESET);
-	//turn gps module on
-	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_10, GPIO_PIN_SET);
+		//switch led on
+		HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_SET);
+		//Wait 100 ms
+		//HAL_Delay(100);
+		//switch led off
+		//HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_RESET);
+		//turn gps module on
+		HAL_GPIO_WritePin(GPIOA, GPIO_PIN_10, GPIO_PIN_SET);
 
-	//set flag on
-	flag = 1;
+		//set flag on
+		flag = 1;
+
 
   } else {
       __NOP();
