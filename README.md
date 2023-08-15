@@ -284,3 +284,33 @@ Bbb
   * I can't delete messages from the memory with the function ```sim800_delete_all_sms(uint8_t debug_on)```
   * Newly arrived sms are not always available when reading the unread messages : ```"AT+CMGL=\"REC UNREAD\"\r\n"``` 
 
+### On the 15th of August 2023
+
+40. When testing the SIM800 and after sending 10 "AT", SIM 800 was still not responding. Rebooted the STM and worked at first call. I suspect that the UART gets compromised at some point :
+
+```
+AT                                                                              
+AT                                                                              
+AT                                                                              
+AT                                                                              
+AT                                                                              
+AT                                                                              
+AT                                                                              
+AT                                                                              
+AT                                                                              
+AT                                                                              
+AT                                                                              
+AT                                                                              
+AT                                                                              
+AT                                                                              
+SIM800 : OK                                                                     
+AT+CMGF=1                                                                       
+AT+CPMS="SM","SM","SM"                                                          
+AT                                                                              
+SIM800 : OK                                                                     
+AT+CMGL="ALL"                                                                   
+AT+CMGL="ALL"                                                                   
++CMGL: 1,"REC UNREAD","+32456413932","","23/08/15,14:53:08+08"                  
+LOCATE  
+```
+It seems afer sending and before reading an SMS, the UART line gets compromised. Therefore the UART3 is reset before these actions are performed.

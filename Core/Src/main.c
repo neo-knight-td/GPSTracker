@@ -31,6 +31,9 @@
 /* USER CODE BEGIN PTD */
 
 #define BUFF_SIZE 700
+#define SMS_SIZE 6
+#define STD_SMS_SEND_LOCATION "LOCATE"
+#define NO_GPS_LOCK "NO GPS LOCK"
 
 /* USER CODE END PTD */
 
@@ -40,10 +43,11 @@ uint8_t UART1_rxBuffer[BUFF_SIZE] = {0};
 uint8_t UART3_rxBuffer[BUFF_SIZE] = {0};
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart);
 char nmea_raw_data[BUFF_SIZE];
-char loc_str[50] = " ";
+char loc_str[50] = "NO GPS LOCK";
 int gps_lock = 0;
 int gps_lock_th = 20;
 int flag = 0;
+uint8_t send_location_flag = 1;
 char mobileNumber[] = "+32456413932";
 
 /* USER CODE END PD */
@@ -99,10 +103,15 @@ void m8n_read_location(char nmea_raw_data[], char *loc_str[]){
     start_GLL_msg = strstr(nmea_raw_data, "GLL");
     len_GLL_msg = strlen(start_GLL_msg);
 
-    *loc_str = "";
+    //TODO : check to send **loc_str, like in function sim800_read_sms
+    *loc_str = "NO GPS LOCK";
 
     //message is not valid as does not have minimum length
     if (len_GLL_msg < GLL_MSG_LEN){
+        char sentence[50] = "";
+        sprintf(sentence,"NMEA message not valid\r\n");
+        //HAL_UART_Transmit(&huart2, (uint8_t*) sentence, strlen(sentence), 100);
+
         return;
     }
 
@@ -172,29 +181,33 @@ int sim800_AT_OK(uint8_t debug_on){
 	uint8_t buffer[30] = {0};
 	uint8_t ATisOK = 0;
 	uint8_t count = 0;
-	uint8_t timeout = 3;
+	uint8_t timeout = 2;
 
 	while(!ATisOK){
 
 		if (debug_on){HAL_UART_Transmit(&huart2,(uint8_t *)ATcommand,strlen(ATcommand),1000);}
-		HAL_UART_Transmit(&huart3,(uint8_t *)ATcommand,strlen(ATcommand),100);
-		HAL_UART_Receive (&huart3, buffer, 30, 8000);
-		HAL_Delay(10);
+		HAL_UART_Transmit(&huart3,(uint8_t *)ATcommand,strlen(ATcommand),1000);
+		HAL_UART_Receive (&huart3, buffer, 30, 100);
+		HAL_Delay(1000);
 
 		if(strstr((char *)buffer,"OK")){
+			char ok_sim800[] = "SIM800 : OK\r\n";
+			if (debug_on){HAL_UART_Transmit(&huart2,(uint8_t *)ok_sim800,strlen(ok_sim800),1000);}
 			ATisOK = 1;
+			return 1;
 		}
 
-		HAL_Delay(10);
+		HAL_Delay(1000);
 		memset(buffer,0,sizeof(buffer));
 
 		count++;
 		if (count >= timeout){
-			return -1;
+			break;
 		}
 	}
 
-	return 1;
+	return 0;
+
 }
 
 int sim800_setup(uint8_t debug_on){
@@ -252,10 +265,18 @@ int sim800_send_sms(char str_to_send[], uint8_t debug_on){
 	memset(buffer,0,sizeof(buffer));
 	HAL_Delay(10);
 
+	//reset the UART, as per note 40
+	HAL_Delay(3000);
+	MX_USART3_UART_Init();
+
 	return 1;
 }
 
-int sim800_read_sms(uint8_t debug_on){
+int sim800_read_sms(char** str_to_read, uint8_t debug_on){
+
+	//reset the UART, as per note 40
+	HAL_Delay(3000);
+	MX_USART3_UART_Init();
 
 	char ATcommand[80];
 	uint8_t buffer[BUFF_SIZE] = {0};
@@ -265,13 +286,25 @@ int sim800_read_sms(uint8_t debug_on){
 	}
 
 	//list all sms
-	sprintf(ATcommand,"AT+CMGL=\"REC UNREAD\"\r\n");//ALL
+	sprintf(ATcommand,"AT+CMGL=\"ALL\"\r\n");//REC UNREAD
 	if (debug_on){HAL_UART_Transmit(&huart2,(uint8_t *)ATcommand,strlen(ATcommand),1000);}
-	HAL_UART_Transmit(&huart3,(uint8_t *)ATcommand,strlen(ATcommand),1000);
+	HAL_UART_Transmit(&huart3,(uint8_t *)ATcommand,strlen(ATcommand),100);
 	HAL_UART_Receive (&huart3, buffer, BUFF_SIZE, 5000);
 	if (debug_on){HAL_UART_Transmit(&huart2, buffer, BUFF_SIZE, 1000);}
-	HAL_Delay(10);
+
+	HAL_Delay(1000);
+
+	//allocate memory to the pointer
+	*str_to_read = malloc((SMS_SIZE+1)*sizeof(char));
+	//copy start of sms from buffer into the pointer
+	strcpy(*str_to_read,strstr((char*)buffer, "\"\r\n"));
+	//reset buffer
 	memset(buffer,0,sizeof(buffer));
+    //NOTE : https://koor.fr/C/cstring/memmove.wp
+	//cut start of sms (remove the \"\r\n" characters)
+    memmove(*str_to_read,(*str_to_read)+3,SMS_SIZE);
+
+    if (debug_on){HAL_UART_Transmit(&huart2, (uint8_t*) *str_to_read, SMS_SIZE, 1000);}
 
 	return 1;
 }
@@ -289,9 +322,11 @@ int sim800_delete_all_sms(uint8_t debug_on){
 	sprintf(ATcommand,"AT+CMGDA=\"DEL ALL\"\r\n");
 	if (debug_on){HAL_UART_Transmit(&huart2,(uint8_t *)ATcommand,strlen(ATcommand),1000);}
 	HAL_UART_Transmit(&huart3,(uint8_t *)ATcommand,strlen(ATcommand),1000);
-	HAL_UART_Receive (&huart3, buffer, 30, 1000);
+	//sim800 does not always answer to the command (deletes memory with no ack)
+	HAL_UART_Receive (&huart3, buffer, 30, 25000);
 	if (debug_on){HAL_UART_Transmit(&huart2, buffer, 30, 1000);}
-	HAL_Delay(10);
+
+	HAL_Delay(1000);
 	memset(buffer,0,sizeof(buffer));
 
 	return 1;
@@ -316,6 +351,25 @@ int sim800_originate_call(uint8_t debug_on){
 	HAL_Delay(10);
 
 	return 1;
+}
+
+//this function will check if all conditions are met to send location, if yes, location is sent.
+uint8_t send_location(){
+	//check if flag for sending location is on & that we have a gps lock
+	if (send_location_flag == 1 && gps_lock >= gps_lock_th){
+		//read sms
+		char* sms;
+		sim800_read_sms(&sms, 1);
+		//if sms content corresponds to a location request
+		if(strstr(sms,STD_SMS_SEND_LOCATION)){
+			//send sms back with our location
+			sim800_send_sms(loc_str, 1);
+		}
+		//delete all sms
+		sim800_delete_all_sms(1);
+		//reset flag
+		send_location_flag = 0;
+	}
 }
 
 /* USER CODE END PFP */
@@ -370,6 +424,8 @@ int main(void)
   while (1)
   {
 
+
+	//TODO : write lines below with strcpy and (char*)
 	//copy buffer content into char array
 	int i = 0;
     for (i=0;i<BUFF_SIZE;i++){
@@ -379,30 +435,7 @@ int main(void)
     //extract location under "DDD,DDD" format
     m8n_read_location(nmea_raw_data, &loc_str);
 
-	//transmit formatted location to PC if gps is locked
-	//HAL_UART_Transmit(&huart2, (uint8_t*) gps_lock, sizeof(gps_lock), 100);
-	//HAL_UART_Transmit(&huart2, (uint8_t*) loc_str, sizeof(loc_str), 100);
-	//HAL_UART_Transmit(&huart2, (uint8_t*) gps_lock, sizeof(gps_lock), 100);
-
-
-	//check if flag is on (user button pressed)
-	if (flag == 1){// && gps_lock >= gps_lock_th){
-
-		//read sms
-		sim800_read_sms(1);
-
-		//send sms
-		//sim800_send_sms(loc_str, 1);
-
-		//delete all sms
-		//sim800_delete_all_sms(1);
-
-		//give a call
-		//originate_call(0);
-
-		//reset flag
-		flag = 0;
-	}
+    send_location();
 
     /* USER CODE END WHILE */
 
@@ -670,7 +703,7 @@ void HAL_GPIO_EXTI_Rising_Callback(uint16_t GPIO_Pin)
 	if(GPIO_Pin == GPIO_PIN_13) {
 
 		//switch led on
-		HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_SET);
+		//HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_SET);
 		//Wait 100 ms
 		//HAL_Delay(100);
 		//switch led off
@@ -679,7 +712,7 @@ void HAL_GPIO_EXTI_Rising_Callback(uint16_t GPIO_Pin)
 		//HAL_GPIO_WritePin(GPIOA, GPIO_PIN_10, GPIO_PIN_SET);
 
 		//set flag on
-		flag = 1;
+		//flag = 1;
 
 
   } else {
@@ -691,14 +724,14 @@ void HAL_GPIO_EXTI_Falling_Callback(uint16_t GPIO_Pin)
 {
   if(GPIO_Pin == GPIO_PIN_12) {
 	  	//commented out this code to avoid false alerts
-	    /*
+
 		//switch led on
-		//HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_SET);
+		HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_SET);
 		//turn gps module on
-		//HAL_GPIO_WritePin(GPIOA, GPIO_PIN_10, GPIO_PIN_SET);
+		HAL_GPIO_WritePin(GPIOA, GPIO_PIN_10, GPIO_PIN_SET);
 		//set flag on
-		//flag = 1;
-		*/
+		send_location_flag = 1;
+
 
   } else {
       __NOP();
