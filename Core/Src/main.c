@@ -47,7 +47,7 @@ char loc_str[50] = "NO GPS LOCK";
 int gps_lock = 0;
 int gps_lock_th = 20;
 int flag = 0;
-uint8_t send_location_flag = 1;
+uint8_t send_location_flag = 0;
 char mobileNumber[] = "+32456413932";
 
 /* USER CODE END PD */
@@ -353,8 +353,18 @@ int sim800_originate_call(uint8_t debug_on){
 	return 1;
 }
 
-//this function will check if all conditions are met to send location, if yes, location is sent.
-uint8_t send_location(){
+//this function will check various conditions
+uint8_t watch_conditions(){
+	//if we have no purpose to stay awake, go to sleep
+	if (send_location_flag == 0){
+	    //NOTE : code for low power mode testing ...
+	    char sentence[50] = "";
+	    sprintf(sentence,"Entering sleep mode...\r\n");
+	    HAL_UART_Transmit(&huart2, (uint8_t*) sentence, strlen(sentence), 100);
+
+	    HAL_SuspendTick();
+	    HAL_PWR_EnterSLEEPMode(PWR_MAINREGULATOR_ON, PWR_SLEEPENTRY_WFI);
+	}
 	//check if flag for sending location is on & that we have a gps lock
 	if (send_location_flag == 1 && gps_lock >= gps_lock_th){
 		//read sms
@@ -367,6 +377,10 @@ uint8_t send_location(){
 		}
 		//delete all sms
 		sim800_delete_all_sms(1);
+		//switch gps off
+		HAL_GPIO_WritePin(GPIOA, GPIO_PIN_10, GPIO_PIN_RESET);
+		//switch led off
+		HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_RESET);
 		//reset flag
 		send_location_flag = 0;
 	}
@@ -415,6 +429,7 @@ int main(void)
   //setup gsm module
   sim800_setup(1);
 
+  //NOTE : code for low power mode testing ...
   HAL_UART_Receive_DMA (&huart1, (uint8_t*)UART1_rxBuffer, 700);
 
   /* USER CODE END 2 */
@@ -423,8 +438,6 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-
-
 	//TODO : write lines below with strcpy and (char*)
 	//copy buffer content into char array
 	int i = 0;
@@ -435,7 +448,7 @@ int main(void)
     //extract location under "DDD,DDD" format
     m8n_read_location(nmea_raw_data, &loc_str);
 
-    send_location();
+    watch_conditions();
 
     /* USER CODE END WHILE */
 
@@ -694,6 +707,12 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 	//}
 	 * */
 
+  	//NOTE : code for low power mode testing ...
+  	//HAL_ResumeTick();
+
+    //char sentence[50] = "";
+    //sprintf(sentence,"Wake up from sleep mode by UART...\r\n");
+    //HAL_UART_Transmit(&huart2, (uint8_t*) sentence, strlen(sentence), 100);
 }
 
 
@@ -723,7 +742,13 @@ void HAL_GPIO_EXTI_Rising_Callback(uint16_t GPIO_Pin)
 void HAL_GPIO_EXTI_Falling_Callback(uint16_t GPIO_Pin)
 {
   if(GPIO_Pin == GPIO_PIN_12) {
-	  	//commented out this code to avoid false alerts
+
+	  	//NOTE : code for low power mode testing ...
+	  	HAL_ResumeTick();
+
+	    char sentence[50] = "";
+	    sprintf(sentence,"Wake up from sleep mode by EXTI...\r\n");
+	    HAL_UART_Transmit(&huart2, (uint8_t*) sentence, strlen(sentence), 100);
 
 		//switch led on
 		HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_SET);
