@@ -47,7 +47,8 @@ char loc_str[50] = "NO GPS LOCK";
 int gps_lock = 0;
 int gps_lock_th = 20;
 int flag = 0;
-uint8_t send_location_flag = 0;
+uint8_t wkp_flag = 0;
+uint8_t send_loc_flag = 0;
 char mobileNumber[] = "+32456413932";
 
 /* USER CODE END PD */
@@ -323,7 +324,11 @@ int sim800_delete_all_sms(uint8_t debug_on){
 	if (debug_on){HAL_UART_Transmit(&huart2,(uint8_t *)ATcommand,strlen(ATcommand),1000);}
 	HAL_UART_Transmit(&huart3,(uint8_t *)ATcommand,strlen(ATcommand),1000);
 	//sim800 does not always answer to the command (deletes memory with no ack)
+
+	//TODO : use interrupts & avoid waiting for 25 seconds here
 	HAL_UART_Receive (&huart3, buffer, 30, 25000);
+	//use interrupts to receives this command
+	//HAL_UART_Receive_IT(&huart3, buffer, 30);
 	if (debug_on){HAL_UART_Transmit(&huart2, buffer, 30, 1000);}
 
 	HAL_Delay(1000);
@@ -355,34 +360,50 @@ int sim800_originate_call(uint8_t debug_on){
 
 //this function will check various conditions
 uint8_t watch_conditions(){
-	//if we have no purpose to stay awake, go to sleep
-	if (send_location_flag == 0){
-	    //NOTE : code for low power mode testing ...
-	    char sentence[50] = "";
-	    sprintf(sentence,"Entering sleep mode...\r\n");
-	    HAL_UART_Transmit(&huart2, (uint8_t*) sentence, strlen(sentence), 100);
 
-	    HAL_SuspendTick();
-	    HAL_PWR_EnterSLEEPMode(PWR_MAINREGULATOR_ON, PWR_SLEEPENTRY_WFI);
-	}
-	//check if flag for sending location is on & that we have a gps lock
-	if (send_location_flag == 1 && gps_lock >= gps_lock_th){
+	//if we just woke up
+	if (wkp_flag == 1){
 		//read sms
 		char* sms;
 		sim800_read_sms(&sms, 1);
 		//if sms content corresponds to a location request
 		if(strstr(sms,STD_SMS_SEND_LOCATION)){
+			//set send_loc_flag
+			send_loc_flag = 1;
+		}
+		//reset flag
+		wkp_flag = 0;
+	}
+	//if we have a location request
+	else if (send_loc_flag == 1){
+		//check that we have a gps lock
+		if (gps_lock >= gps_lock_th){
 			//send sms back with our location
 			sim800_send_sms(loc_str, 1);
+			//switch led off
+			HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_RESET);
+			//switch gps off
+			//HAL_GPIO_WritePin(GPIOA, GPIO_PIN_10, GPIO_PIN_RESET);
+			//reset flags
+			send_loc_flag = 0;
 		}
+	}
+	//if we have no purpose to stay awake (no flag is on)
+	else {
 		//delete all sms
 		sim800_delete_all_sms(1);
-		//switch gps off
-		HAL_GPIO_WritePin(GPIOA, GPIO_PIN_10, GPIO_PIN_RESET);
-		//switch led off
-		HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_RESET);
-		//reset flag
-		send_location_flag = 0;
+		//go low power mode
+	    //NOTE : code for low power mode testing ...
+	    char sentence[50] = "";
+	    sprintf(sentence,"Entering stop mode...\r\n");
+	    HAL_UART_Transmit(&huart2, (uint8_t*) sentence, strlen(sentence), 100);
+
+	    //suspend the DMA (avoid wake up from UART)
+	    HAL_UART_DMAPause(&huart1);
+
+	    HAL_SuspendTick();
+	    //HAL_PWR_EnterSLEEPMode(PWR_MAINREGULATOR_ON, PWR_SLEEPENTRY_WFI);
+	    HAL_PWR_EnterSTOPMode(PWR_LOWPOWERREGULATOR_ON, PWR_STOPENTRY_WFI);
 	}
 }
 
@@ -429,8 +450,12 @@ int main(void)
   //setup gsm module
   sim800_setup(1);
 
-  //NOTE : code for low power mode testing ...
+  //switch GPS module on
+  //init DMA
   HAL_UART_Receive_DMA (&huart1, (uint8_t*)UART1_rxBuffer, 700);
+  //turn gps module on
+  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_10, GPIO_PIN_SET);
+
 
   /* USER CODE END 2 */
 
@@ -744,18 +769,21 @@ void HAL_GPIO_EXTI_Falling_Callback(uint16_t GPIO_Pin)
   if(GPIO_Pin == GPIO_PIN_12) {
 
 	  	//NOTE : code for low power mode testing ...
+	  	SystemClock_Config ();
 	  	HAL_ResumeTick();
+	  	//turn DMA on again
+	  	HAL_UART_DMAResume(&huart1);
 
 	    char sentence[50] = "";
-	    sprintf(sentence,"Wake up from sleep mode by EXTI...\r\n");
+	    sprintf(sentence,"Wake up from stop mode by EXTI...\r\n");
 	    HAL_UART_Transmit(&huart2, (uint8_t*) sentence, strlen(sentence), 100);
 
 		//switch led on
 		HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_SET);
-		//turn gps module on
-		HAL_GPIO_WritePin(GPIOA, GPIO_PIN_10, GPIO_PIN_SET);
+		//turn gps module on ==> should be done before waking the stm up
+		//HAL_GPIO_WritePin(GPIOA, GPIO_PIN_10, GPIO_PIN_SET);
 		//set flag on
-		send_location_flag = 1;
+		wkp_flag = 1;
 
 
   } else {
