@@ -211,33 +211,40 @@ void mma8452q_standby(uint8_t debug_on){
 	uint8_t sysmod;
 	uint8_t buf[256];
 
-	strcpy((char*)buf, "Request to go standby.\r\n");
-	HAL_UART_Transmit(&huart2, buf, strlen((char*)buf), HAL_MAX_DELAY);
+	if(debug_on){
+		strcpy((char*)buf, "Request to go standby.\r\n");
+		HAL_UART_Transmit(&huart2, buf, strlen((char*)buf), HAL_MAX_DELAY);
 
-	HAL_Delay(500);
+		HAL_Delay(500);
+	}
 
-	//mma8452q_read_from_register(1, CTRL_REG1_ADDR, &sysmod);
+	//read the active bit
 	HAL_I2C_Mem_Read(&hi2c1, MMA8452Q_ADDR, CTRL_REG1_ADDR, 1, &sysmod, 1, HAL_MAX_DELAY);
 
-	if (!(sysmod & 0x01)){
-		strcpy((char*)buf, "I was standby already.\r\n");
-		HAL_UART_Transmit(&huart2, buf, strlen((char*)buf), HAL_MAX_DELAY);
-	}
-	else{
-		strcpy((char*)buf, "I was active.\r\n");
-		HAL_UART_Transmit(&huart2, buf, strlen((char*)buf), HAL_MAX_DELAY);
+	if (debug_on){
+		if (!(sysmod & 0x01)){
+			strcpy((char*)buf, "I was standby already.\r\n");
+			HAL_UART_Transmit(&huart2, buf, strlen((char*)buf), HAL_MAX_DELAY);
+		}
+		else{
+			strcpy((char*)buf, "I was active.\r\n");
+			HAL_UART_Transmit(&huart2, buf, strlen((char*)buf), HAL_MAX_DELAY);
+		}
+
+		HAL_Delay(500);
 	}
 
+	//set active bit to 0 (standby mode)
 	sysmod &= ~(0x01);
 
-	HAL_Delay(500);
-
-	//mma8452q_write_into_register(1, CTRL_REG1_ADDR, sysmod);
+	//write the active bit into mm4852q
 	HAL_I2C_Mem_Write(&hi2c1, MMA8452Q_ADDR, CTRL_REG1_ADDR, 1, &sysmod, 1, HAL_MAX_DELAY);
 
-	if (!(sysmod & 0x01)){
-		strcpy((char*)buf, "Going standby.\r\n");
-		HAL_UART_Transmit(&huart2, buf, strlen((char*)buf), HAL_MAX_DELAY);
+	if (debug_on){
+		if (!(sysmod & 0x01)){
+			strcpy((char*)buf, "Going standby.\r\n");
+			HAL_UART_Transmit(&huart2, buf, strlen((char*)buf), HAL_MAX_DELAY);
+		}
 	}
 
 }
@@ -247,33 +254,40 @@ void mma8452q_active(uint8_t debug_on){
 	uint8_t sysmod;
 	uint8_t buf[256];
 
-	strcpy((char*)buf, "Request to go active.\r\n");
-	HAL_UART_Transmit(&huart2, buf, strlen((char*)buf), HAL_MAX_DELAY);
+	if(debug_on){
+		strcpy((char*)buf, "Request to go active.\r\n");
+		HAL_UART_Transmit(&huart2, buf, strlen((char*)buf), HAL_MAX_DELAY);
 
-	HAL_Delay(500);
+		HAL_Delay(500);
+	}
 
-	//mma8452q_read_from_register(1, CTRL_REG1_ADDR, &sysmod);
+	//read the active bit
 	HAL_I2C_Mem_Read(&hi2c1, MMA8452Q_ADDR, CTRL_REG1_ADDR, 1, &sysmod, 1, HAL_MAX_DELAY);
 
-	if ((sysmod & 0x01)){
-		strcpy((char*)buf, "I was active already.\r\n");
-		HAL_UART_Transmit(&huart2, buf, strlen((char*)buf), HAL_MAX_DELAY);
-	}
-	else{
-		strcpy((char*)buf, "I was standby.\r\n");
-		HAL_UART_Transmit(&huart2, buf, strlen((char*)buf), HAL_MAX_DELAY);
+	if (debug_on){
+		if ((sysmod & 0x01)){
+			strcpy((char*)buf, "I was active already.\r\n");
+			HAL_UART_Transmit(&huart2, buf, strlen((char*)buf), HAL_MAX_DELAY);
+		}
+		else{
+			strcpy((char*)buf, "I was standby.\r\n");
+			HAL_UART_Transmit(&huart2, buf, strlen((char*)buf), HAL_MAX_DELAY);
+		}
+
+		HAL_Delay(500);
 	}
 
-	HAL_Delay(500);
-
+	//set active bit to 1 (active mode)
 	sysmod |= (0x01);
 
-	//mma8452q_write_into_register(1, CTRL_REG1_ADDR, sysmod);
+	//write the active bit into mm4852q
 	HAL_I2C_Mem_Write(&hi2c1, MMA8452Q_ADDR, CTRL_REG1_ADDR, 1, &sysmod, 1, HAL_MAX_DELAY);
 
-	if ((sysmod & 0x01)){
-		strcpy((char*)buf, "Going active.\r\n");
-		HAL_UART_Transmit(&huart2, buf, strlen((char*)buf), HAL_MAX_DELAY);
+	if (debug_on){
+		if ((sysmod & 0x01)){
+			strcpy((char*)buf, "Going active.\r\n");
+			HAL_UART_Transmit(&huart2, buf, strlen((char*)buf), HAL_MAX_DELAY);
+		}
 	}
 }
 
