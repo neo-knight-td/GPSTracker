@@ -314,3 +314,45 @@ AT+CMGL="ALL"
 LOCATE  
 ```
 It seems afer sending and before reading an SMS, the UART line gets compromised. Therefore the UART3 is reset before these actions are performed.
+
+### On the 20th of August 2023
+
+41. Code was adapted to leave the GPS module on at all times so that when a location request is received, the response time is lowered. Also, the deletion of all messages from the memory is moved after the location is sent to the requestor. This with the aim to diminish the response time.
+
+42. First functionnality is working quite well. Not all the code is written already but it's advanced enough to pass to the second part of the project : theft detection. This part involves an accelerometer. I found two old accelero in my drawer :
+  * Ardafruit ADXL335 3-Axis Accelerometer with analog volt outputs
+  * Red Bot Accelerometer Board (MMA8452Q)
+
+I chose to go for the Red Bot Accelerometer Board as it's a digital sensor. The interesting thing about this board is also that communication is with I2C. That's a nice occasion to get started to this protocol (although I already learned about thanks to [this](https://www.allaboutcircuits.com/technical-articles/the-i2c-bus-hardware-implementation-details/) guide).
+
+I followed [Digi-Key](https://www.digikey.be/en/maker/projects/getting-started-with-stm32-i2c-example/ba8c2bfef2024654b5dd10012425fa23)'s tutorial for the implementation of I2C sensor on the STM 32.
+
+### On the 26th of August 2023
+
+43. From the MMA8452Q documentation, we see read that I2C address of the accelerometer is either ```0x1C``` or ```0x1D```. After testing, ```0x1D``` is the good address.
+
+46. In I2C, reading from the slave begins with a write (Ref. page 7 of [```slva704.pdf```](https://www.ti.com/lit/an/slva704/slva704.pdf?ts=1693003767721)).
+
+47. I wrote two functions :
+  * ```mma8452q_read_cfg(uint8_t debug_on)``` : reads the ELE & OAE bits from the configuration register and returns true if both of them are 1.
+  * ```mma8452q_write_cfg(uint8_t bebug_on)``` : sets the ELE & OAE bits from the configuration register to 1
+
+  When testing the functions, I could read and write to the register but when reading, the value was always 0, independently from the value written in the register. After double checking the documentation of the accelerometer, it appears that the modification of ```FF_MT_CFG``` (0x15) register content can only occur when device is in STANDBY mode... We thus need to create a function for switching from ACTIVE to STANDBY mode and vice versa.
+
+48. After writing the function to transit from ACTIVE to STANDBY mode, I observe that even after the accelero is set in standby mode, the value read from the FF_MT_CFG register is not the one I wrote. Same thing with the SYSMOD register (the register used for switching between active and stanby modes). For this last one, it's explained from the documentation as the default val.. Omg, this register is read only !! :
+
+To change the system mode on the MMA8452Q accelerometer, you need to modify the appropriate bits in the CTRL_REG1 (Control Register 1). The CTRL_REG1 register controls various settings related to the operating mode, data rate, and other features of the sensor. Here's a step-by-step guide on how to change the system mode:
+
+Read the Current Register Value (Optional): Before making any changes, you might want to read the current value of the CTRL_REG1 register to understand the existing settings. This can be done by sending a read command to the sensor's I2C address and reading the value from the CTRL_REG1 register.
+
+Set the System Mode Bits: The relevant bits for setting the system mode are typically the first two bits (MODE1 and MODE0) in the CTRL_REG1 register. The combination of these bits determines the operating mode:
+
+MODE1 MODE0: Operation Mode
+0 0: Standby mode
+0 1: Active mode (Accelerometer is active)
+1 0: Low-power mode (Reduced noise, lower data rate)
+1 1: High-resolution mode (Higher data rate, higher noise)
+
+49. What am I sometimes does not work
+
+50. The standby and active functions seems to work. The result from mma8452q_read_sysmod seem erroneous.

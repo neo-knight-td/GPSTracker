@@ -24,6 +24,7 @@
 #include "string.h"
 #include "stdlib.h"
 #include "stdio.h"
+#include "sim800.h"
 
 /* USER CODE END Includes */
 
@@ -41,15 +42,29 @@
 /* USER CODE BEGIN PD */
 uint8_t UART1_rxBuffer[BUFF_SIZE] = {0};
 uint8_t UART3_rxBuffer[BUFF_SIZE] = {0};
-void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart);
+//void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart);
 char nmea_raw_data[BUFF_SIZE];
 char loc_str[50] = "NO GPS LOCK";
 int gps_lock = 0;
 int gps_lock_th = 20;
 int flag = 0;
+uint8_t stay_awake_flag = 1;
 uint8_t wkp_flag = 0;
 uint8_t send_loc_flag = 0;
 char mobileNumber[] = "+32456413932";
+
+//accelero
+//ref documentation
+static const uint8_t MMA8452Q_ADDR = 0x1D << 1;
+static const uint8_t CTRL_REG1_ADDR = 0x2A;
+static const uint8_t WHO_AM_I_ADDR = 0x0D;
+static const uint8_t SYS_MOD_ADDR = 0x0B;
+static const uint8_t FF_MT_CFG_ADDR = 0x15;
+static const uint8_t FF_MT_SRC_ADDR = 0x16;
+static const uint8_t FF_MT_THS_ADDR = 0x17;
+
+//float temp_c;
+
 
 /* USER CODE END PD */
 
@@ -59,7 +74,9 @@ char mobileNumber[] = "+32456413932";
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
- UART_HandleTypeDef huart1;
+ I2C_HandleTypeDef hi2c1;
+
+UART_HandleTypeDef huart1;
 UART_HandleTypeDef huart2;
 UART_HandleTypeDef huart3;
 DMA_HandleTypeDef hdma_usart1_rx;
@@ -75,6 +92,7 @@ static void MX_USART2_UART_Init(void);
 static void MX_DMA_Init(void);
 static void MX_USART1_UART_Init(void);
 static void MX_USART3_UART_Init(void);
+static void MX_I2C1_Init(void);
 /* USER CODE BEGIN PFP */
 
 float convert_DDmm_to_DDD(float DDmm, char *sign){
@@ -92,270 +110,189 @@ float convert_DDmm_to_DDD(float DDmm, char *sign){
     return DDD;
 }
 
-void m8n_read_location(char nmea_raw_data[], char *loc_str[]){
 
-    const __uint8_t GLL_MSG_LEN = 47;
+//this function writes data into a register of the mma8452q accelerometer.
+int mma8452q_write_into_register(uint8_t debug_on, uint8_t reg_addr, uint8_t data){
+	HAL_StatusTypeDef ret;
+	uint8_t i2c_buf[12];
 
-    float latitude, longitude;
-    char lat_sign, long_sign;
-    char *start_GLL_msg;
-    int len_GLL_msg;
+	//first byte sent is register address
+	i2c_buf[0] = reg_addr;
+    //second byte sent is data to write
+	i2c_buf[1] = data;
 
-    start_GLL_msg = strstr(nmea_raw_data, "GLL");
-    len_GLL_msg = strlen(start_GLL_msg);
+    // Write into the register of MMA8452Q
+    ret = HAL_I2C_Master_Transmit(&hi2c1, MMA8452Q_ADDR, i2c_buf, 2, HAL_MAX_DELAY);
+    if ( ret != HAL_OK ) {
+		  strcpy((char*)i2c_buf, "Error Tx\r\n");
+		  if (debug_on){HAL_UART_Transmit(&huart2,i2c_buf,strlen((char*)i2c_buf),HAL_MAX_DELAY);}
+		  return 0;
+    } else {
 
-    //TODO : check to send **loc_str, like in function sim800_read_sms
-    *loc_str = "NO GPS LOCK";
+    	return 1;
 
-    //message is not valid as does not have minimum length
-    if (len_GLL_msg < GLL_MSG_LEN){
-        char sentence[50] = "";
-        sprintf(sentence,"NMEA message not valid\r\n");
-        //HAL_UART_Transmit(&huart2, (uint8_t*) sentence, strlen(sentence), 100);
-
-        return;
     }
+}
 
-    //retreive location parameters from nmea sentence
-    sscanf(start_GLL_msg, "GLL,%f,%c,%f,%c,",&latitude, &lat_sign, &longitude, &long_sign);
+//this function reads data from a register of the mma8452q accelerometer.
+int mma8452q_read_from_register(uint8_t debug_on, uint8_t reg_addr, uint8_t* data){
+	HAL_StatusTypeDef ret;
+	uint8_t i2c_buf[12];
 
-    //if one of the lat or long is equal to 0, reset lock value and return
-    if (latitude == 0 || longitude == 0){
-        gps_lock = 0;
-        //*loc_str = "";
+    // Tell MMA8452Q from which register we want to read
+	i2c_buf[0] = reg_addr;
+	ret = HAL_I2C_Master_Transmit(&hi2c1, MMA8452Q_ADDR, i2c_buf, 1, HAL_MAX_DELAY);
+	if ( ret != HAL_OK ) {
+		strcpy((char*)i2c_buf, "Error Tx\r\n");
+		if (debug_on){HAL_UART_Transmit(&huart2,i2c_buf,strlen((char*)i2c_buf),HAL_MAX_DELAY);}
+		return 0;
+	} else {
 
-        char sentence[50] = "";
-        sprintf(sentence,"%Inconsistent, lock = %i\r\n",gps_lock);
-        HAL_UART_Transmit(&huart2, (uint8_t*) sentence, strlen(sentence), 100);
-        //HAL_UART_Transmit(&huart2, (uint8_t*) *loc_str, strlen(*loc_str), 100);
+	  // read from the register
+	  ret = HAL_I2C_Master_Receive(&hi2c1, MMA8452Q_ADDR, i2c_buf, 1, HAL_MAX_DELAY);
+	  if ( ret != HAL_OK ) {
+		  strcpy((char*)i2c_buf, "Error Rx\r\n");
+		  if (debug_on){HAL_UART_Transmit(&huart2,i2c_buf,strlen((char*)i2c_buf),HAL_MAX_DELAY);}
+		  return 0;
+	  } else {
+		  *data = i2c_buf[0];
+		  return 1;
+	  }
+	}
+}
 
-        return;
-    }
+//this function checks the system mode of the mma8452q accelerometer. Returns 0 if standby (or error) and 1 if active.
+int mma8452q_whoami(uint8_t debug_on){
 
-    //if one of the lat or long is nan (https://stackoverflow.com/a/570694), reset lock value and return
-    else if (latitude != latitude || longitude != longitude){
-        gps_lock = 0;
-        //*loc_str = "";
+	uint8_t sysmod;
+	uint8_t default_id = 0x2A;
 
-        char sentence[50] = "";
-        sprintf(sentence,"%NaN, lock = %i\r\n",gps_lock);
-        HAL_UART_Transmit(&huart2, (uint8_t*) sentence, strlen(sentence), 100);
-        //HAL_UART_Transmit(&huart2, (uint8_t*) *loc_str, strlen(*loc_str), 100);
+	HAL_I2C_Mem_Read(&hi2c1, MMA8452Q_ADDR, WHO_AM_I_ADDR, 1, &sysmod, 1, HAL_MAX_DELAY);
 
-        return;
-    }
-
-	//copy location parameters into loc_str under desired format
-	sprintf(loc_str, "%f,%f\r\n",convert_DDmm_to_DDD(latitude,&lat_sign),convert_DDmm_to_DDD(longitude,&long_sign));
-
-    //if number of gps lock is still below threshold, increment lock value and return
-    if (gps_lock < gps_lock_th){
-        gps_lock++;
-
-        char sentence[50] = "";
-        sprintf(sentence,"%OK, below threshold, lock = %i\r\n",gps_lock);
-        HAL_UART_Transmit(&huart2, (uint8_t*) sentence, strlen(sentence), 100);
-        //HAL_UART_Transmit(&huart2, (uint8_t*) *loc_str, strlen(*loc_str), 100);
-
-        return;
-    }
-
-    //if nb of consecutive locks is above threshold
-    else if (gps_lock >= gps_lock_th){
-    	gps_lock = gps_lock_th;
-
-        char sentence[50] = "";
-        sprintf(sentence,"All OK, lock = %i\r\n",gps_lock);
-        HAL_UART_Transmit(&huart2, (uint8_t*) sentence, strlen(sentence), 100);
-        //HAL_UART_Transmit(&huart2, (uint8_t*) *loc_str, strlen(*loc_str), 100);
-
-        return;
-    }
+	return (memcmp(&sysmod, &default_id, 1) == 0);
 
 }
 
-//this function checks that SIM800 GSM module responds OK to the AT command "AT" after a maximum of 10 attempts.
-int sim800_AT_OK(uint8_t debug_on){
+//this function checks the system mode of the mma8452q accelerometer. Returns 0 if standby (or error) and 1 if active.
+int mma8452q_read_sysmod(uint8_t debug_on){
 
-	//char ATcommand[80];
-	char ATcommand[] = "AT\r\n";
-	uint8_t buffer[30] = {0};
-	uint8_t ATisOK = 0;
-	uint8_t count = 0;
-	uint8_t timeout = 2;
+	uint8_t sysmod;
 
-	while(!ATisOK){
+	//mma8452q_write_into_register(1, SYS_MOD_ADDR, sysmod);
 
-		if (debug_on){HAL_UART_Transmit(&huart2,(uint8_t *)ATcommand,strlen(ATcommand),1000);}
-		HAL_UART_Transmit(&huart3,(uint8_t *)ATcommand,strlen(ATcommand),1000);
-		HAL_UART_Receive (&huart3, buffer, 30, 100);
-		HAL_Delay(1000);
-
-		if(strstr((char *)buffer,"OK")){
-			char ok_sim800[] = "SIM800 : OK\r\n";
-			if (debug_on){HAL_UART_Transmit(&huart2,(uint8_t *)ok_sim800,strlen(ok_sim800),1000);}
-			ATisOK = 1;
-			return 1;
-		}
-
-		HAL_Delay(1000);
-		memset(buffer,0,sizeof(buffer));
-
-		count++;
-		if (count >= timeout){
-			break;
-		}
+	if(!mma8452q_read_from_register(1, CTRL_REG1_ADDR, &sysmod)){
+		return 0;
 	}
 
-	return 0;
+	return (sysmod & 0x01);
 
 }
 
-int sim800_setup(uint8_t debug_on){
+//this function writes the system mode of the mma8452q accelerometer. 0 for standby and 1 for active
+int mma8452q_write_sysmod(uint8_t debug_on, uint8_t sysmod_cmd){
 
-	char ATcommand[80];
-	uint8_t buffer[30] = {0};
+	uint8_t sysmod;
 
-	if (!sim800_AT_OK(1)){
-		return -1;
+	mma8452q_read_from_register(1, CTRL_REG1_ADDR, &sysmod);
+
+	sysmod_cmd = sysmod & ~(0x01);
+
+	if(!mma8452q_write_into_register(1, CTRL_REG1_ADDR, sysmod)){
+		return 0;
 	}
-
-	//going text mode
-	sprintf(ATcommand,"AT+CMGF=1\r\n");
-	if (debug_on){HAL_UART_Transmit(&huart2,(uint8_t *)ATcommand,strlen(ATcommand),1000);}
-	HAL_UART_Transmit(&huart3,(uint8_t *)ATcommand,strlen(ATcommand),1000);
-	HAL_UART_Receive (&huart3, buffer, 256, 100);
-	HAL_Delay(10);
-	memset(buffer,0,sizeof(buffer));
-
-	//save on sim card only
-	sprintf(ATcommand,"AT+CPMS=\"SM\",\"SM\",\"SM\"\r\n");
-	if (debug_on){HAL_UART_Transmit(&huart2,(uint8_t *)ATcommand,strlen(ATcommand),1000);}
-	HAL_UART_Transmit(&huart3,(uint8_t *)ATcommand,strlen(ATcommand),1000);
-	HAL_UART_Receive (&huart3, buffer, 256, 100);
-	HAL_Delay(10);
-	memset(buffer,0,sizeof(buffer));
-
-	/*
-	sprintf(ATcommand,"AT+CNMI=1,2,0,0,0\r\n");
-	if (debug_on){HAL_UART_Transmit(&huart2,(uint8_t *)ATcommand,strlen(ATcommand),1000);}
-	HAL_UART_Transmit(&huart3,(uint8_t *)ATcommand,strlen(ATcommand),1000);
-	HAL_Delay(10);
-	*/
-	return 1;
-}
-
-int sim800_send_sms(char str_to_send[], uint8_t debug_on){
-
-	char ATcommand[80];
-	uint8_t buffer[30] = {0};
-
-	if (!sim800_AT_OK(1)){
-		return -1;
-	}
-
-	sprintf(ATcommand,"AT+CMGS=\"%s\"\r\n",mobileNumber);
-	if (debug_on){HAL_UART_Transmit(&huart2,(uint8_t *)ATcommand,strlen(ATcommand),1000);}
-	HAL_UART_Transmit(&huart3,(uint8_t *)ATcommand,strlen(ATcommand),1000);
-	HAL_Delay(10);
-
-	sprintf(ATcommand,"%s%c",str_to_send,26);//,0x1a);
-	if (debug_on){HAL_UART_Transmit(&huart2,(uint8_t *)ATcommand,strlen(ATcommand),1000);}
-	HAL_UART_Transmit(&huart3,(uint8_t *)ATcommand,strlen(ATcommand),1000);
-	HAL_UART_Receive (&huart3, buffer, 30, 100);
-	memset(buffer,0,sizeof(buffer));
-	HAL_Delay(10);
-
-	//reset the UART, as per note 40
-	HAL_Delay(3000);
-	MX_USART3_UART_Init();
 
 	return 1;
+
 }
 
-int sim800_read_sms(char** str_to_read, uint8_t debug_on){
 
-	//reset the UART, as per note 40
-	HAL_Delay(3000);
-	MX_USART3_UART_Init();
+void mma8452q_standby(uint8_t debug_on){
 
-	char ATcommand[80];
-	uint8_t buffer[BUFF_SIZE] = {0};
+	uint8_t sysmod;
+	uint8_t buf[256];
 
-	if (!sim800_AT_OK(1)){
-		return -1;
+	strcpy((char*)buf, "Request to go standby.\r\n");
+	HAL_UART_Transmit(&huart2, buf, strlen((char*)buf), HAL_MAX_DELAY);
+
+	HAL_Delay(500);
+
+	//mma8452q_read_from_register(1, CTRL_REG1_ADDR, &sysmod);
+	HAL_I2C_Mem_Read(&hi2c1, MMA8452Q_ADDR, CTRL_REG1_ADDR, 1, &sysmod, 1, HAL_MAX_DELAY);
+
+	if (!(sysmod & 0x01)){
+		strcpy((char*)buf, "I was standby already.\r\n");
+		HAL_UART_Transmit(&huart2, buf, strlen((char*)buf), HAL_MAX_DELAY);
+	}
+	else{
+		strcpy((char*)buf, "I was active.\r\n");
+		HAL_UART_Transmit(&huart2, buf, strlen((char*)buf), HAL_MAX_DELAY);
 	}
 
-	//list all sms
-	sprintf(ATcommand,"AT+CMGL=\"ALL\"\r\n");//REC UNREAD
-	if (debug_on){HAL_UART_Transmit(&huart2,(uint8_t *)ATcommand,strlen(ATcommand),1000);}
-	HAL_UART_Transmit(&huart3,(uint8_t *)ATcommand,strlen(ATcommand),100);
-	HAL_UART_Receive (&huart3, buffer, BUFF_SIZE, 5000);
-	if (debug_on){HAL_UART_Transmit(&huart2, buffer, BUFF_SIZE, 1000);}
+	sysmod &= ~(0x01);
 
-	HAL_Delay(1000);
+	HAL_Delay(500);
 
-	//allocate memory to the pointer
-	*str_to_read = malloc((SMS_SIZE+1)*sizeof(char));
-	//copy start of sms from buffer into the pointer
-	strcpy(*str_to_read,strstr((char*)buffer, "\"\r\n"));
-	//reset buffer
-	memset(buffer,0,sizeof(buffer));
-    //NOTE : https://koor.fr/C/cstring/memmove.wp
-	//cut start of sms (remove the \"\r\n" characters)
-    memmove(*str_to_read,(*str_to_read)+3,SMS_SIZE);
+	//mma8452q_write_into_register(1, CTRL_REG1_ADDR, sysmod);
+	HAL_I2C_Mem_Write(&hi2c1, MMA8452Q_ADDR, CTRL_REG1_ADDR, 1, &sysmod, 1, HAL_MAX_DELAY);
 
-    if (debug_on){HAL_UART_Transmit(&huart2, (uint8_t*) *str_to_read, SMS_SIZE, 1000);}
+	if (!(sysmod & 0x01)){
+		strcpy((char*)buf, "Going standby.\r\n");
+		HAL_UART_Transmit(&huart2, buf, strlen((char*)buf), HAL_MAX_DELAY);
+	}
 
-	return 1;
 }
 
-int sim800_delete_all_sms(uint8_t debug_on){
+void mma8452q_active(uint8_t debug_on){
 
-	char ATcommand[80];
-	uint8_t buffer[30] = {0};
+	uint8_t sysmod;
+	uint8_t buf[256];
 
-	if (!sim800_AT_OK(1)){
-		return -1;
+	strcpy((char*)buf, "Request to go active.\r\n");
+	HAL_UART_Transmit(&huart2, buf, strlen((char*)buf), HAL_MAX_DELAY);
+
+	HAL_Delay(500);
+
+	//mma8452q_read_from_register(1, CTRL_REG1_ADDR, &sysmod);
+	HAL_I2C_Mem_Read(&hi2c1, MMA8452Q_ADDR, CTRL_REG1_ADDR, 1, &sysmod, 1, HAL_MAX_DELAY);
+
+	if ((sysmod & 0x01)){
+		strcpy((char*)buf, "I was active already.\r\n");
+		HAL_UART_Transmit(&huart2, buf, strlen((char*)buf), HAL_MAX_DELAY);
+	}
+	else{
+		strcpy((char*)buf, "I was standby.\r\n");
+		HAL_UART_Transmit(&huart2, buf, strlen((char*)buf), HAL_MAX_DELAY);
 	}
 
-	//list all sms
-	sprintf(ATcommand,"AT+CMGDA=\"DEL ALL\"\r\n");
-	if (debug_on){HAL_UART_Transmit(&huart2,(uint8_t *)ATcommand,strlen(ATcommand),1000);}
-	HAL_UART_Transmit(&huart3,(uint8_t *)ATcommand,strlen(ATcommand),1000);
-	//sim800 does not always answer to the command (deletes memory with no ack)
+	HAL_Delay(500);
 
-	//TODO : use interrupts & avoid waiting for 25 seconds here
-	HAL_UART_Receive (&huart3, buffer, 30, 25000);
-	//use interrupts to receives this command
-	//HAL_UART_Receive_IT(&huart3, buffer, 30);
-	if (debug_on){HAL_UART_Transmit(&huart2, buffer, 30, 1000);}
+	sysmod |= (0x01);
 
-	HAL_Delay(1000);
-	memset(buffer,0,sizeof(buffer));
+	//mma8452q_write_into_register(1, CTRL_REG1_ADDR, sysmod);
+	HAL_I2C_Mem_Write(&hi2c1, MMA8452Q_ADDR, CTRL_REG1_ADDR, 1, &sysmod, 1, HAL_MAX_DELAY);
 
-	return 1;
+	if ((sysmod & 0x01)){
+		strcpy((char*)buf, "Going active.\r\n");
+		HAL_UART_Transmit(&huart2, buf, strlen((char*)buf), HAL_MAX_DELAY);
+	}
 }
 
-int sim800_originate_call(uint8_t debug_on){
+//this function reads the ELE & OAE bits from the configuration register and returns true if both of them are 1
+int mma8452q_configure(uint8_t debug_on){
 
-	char ATcommand[80];
+	uint8_t ffmtcfg = 0xF8;
 
-	if (!sim800_AT_OK(1)){
-		return -1;
+	mma8452q_write_into_register(1, FF_MT_CFG_ADDR, ffmtcfg);
+
+	mma8452q_read_from_register(1, FF_MT_CFG_ADDR, &ffmtcfg);
+
+	//check that accelero is configured for motion detection
+	if (ffmtcfg == 0xF8){
+		return 1;
 	}
-
-	sprintf(ATcommand,"ATD%s;\r\n",mobileNumber);
-	if (debug_on){HAL_UART_Transmit(&huart2,(uint8_t *)ATcommand,strlen(ATcommand),1000);}
-	HAL_UART_Transmit(&huart3,(uint8_t *)ATcommand,strlen(ATcommand),1000);
-	HAL_Delay(20000);
-
-	sprintf(ATcommand,"ATH\r\n");
-	if (debug_on){HAL_UART_Transmit(&huart2,(uint8_t *)ATcommand,strlen(ATcommand),1000);}
-	HAL_UART_Transmit(&huart3,(uint8_t *)ATcommand,strlen(ATcommand),1000);
-	HAL_Delay(10);
-
-	return 1;
+	else{
+		return 0;
+	}
 }
 
 //this function will check various conditions
@@ -363,9 +300,14 @@ uint8_t watch_conditions(){
 
 	//if we just woke up
 	if (wkp_flag == 1){
+
+		//reseting the huart3 >> note 40
+		HAL_Delay(3000);
+		MX_USART3_UART_Init();
+
 		//read sms
 		char* sms;
-		sim800_read_sms(&sms, 1);
+		sim800_read_sms(&sms, 1, huart2, huart3);
 		//if sms content corresponds to a location request
 		if(strstr(sms,STD_SMS_SEND_LOCATION)){
 			//set send_loc_flag
@@ -374,12 +316,87 @@ uint8_t watch_conditions(){
 		//reset flag
 		wkp_flag = 0;
 	}
+	//if we need to stay awake
+	else if (stay_awake_flag == 1){
+
+		uint8_t buf[12];
+
+		strcpy((char*)buf, "WhoAmI?\r\n");
+		HAL_UART_Transmit(&huart2, buf, strlen((char*)buf), HAL_MAX_DELAY);
+
+		if(mma8452q_whoami(1)){
+			strcpy((char*)buf, "Me!\r\n");
+		}
+		else{
+			strcpy((char*)buf, "NoOne\r\n");
+		}
+
+		HAL_UART_Transmit(&huart2, buf, strlen((char*)buf), HAL_MAX_DELAY);
+
+		HAL_Delay(500);
+
+		/*
+		strcpy((char*)buf, "Standby?\r\n");
+		HAL_UART_Transmit(&huart2, buf, strlen((char*)buf), HAL_MAX_DELAY);
+
+		if(!mma8452q_read_sysmod(1)){
+			strcpy((char*)buf, "Yes\r\n");
+		}
+		else{
+			strcpy((char*)buf, "No\r\n");
+		}
+
+		HAL_UART_Transmit(&huart2, buf, strlen((char*)buf), HAL_MAX_DELAY);
+
+		HAL_Delay(500);
+
+
+
+		strcpy((char*)buf, "Active!\r\n");
+		HAL_UART_Transmit(&huart2, buf, strlen((char*)buf), HAL_MAX_DELAY);
+
+		*/
+
+
+		/*
+
+		strcpy((char*)buf, "Active?\r\n");
+		HAL_UART_Transmit(&huart2, buf, strlen((char*)buf), HAL_MAX_DELAY);
+
+		if(mma8452q_read_sysmod(1)){
+			strcpy((char*)buf, "Yes\r\n");
+		}
+		else{
+			strcpy((char*)buf, "No\r\n");
+		}
+
+		HAL_UART_Transmit(&huart2, buf, strlen((char*)buf), HAL_MAX_DELAY);
+
+		HAL_Delay(500);
+
+
+		strcpy((char*)buf, "Standby!\r\n");
+		HAL_UART_Transmit(&huart2, buf, strlen((char*)buf), HAL_MAX_DELAY);
+
+		*/
+		mma8452q_standby(1);
+
+		HAL_Delay(500);
+
+		mma8452q_active(1);
+
+		HAL_Delay(500);
+
+	}
 	//if we have a location request
 	else if (send_loc_flag == 1){
 		//check that we have a gps lock
 		if (gps_lock >= gps_lock_th){
 			//send sms back with our location
-			sim800_send_sms(loc_str, 1);
+			sim800_send_sms(loc_str, 1, huart2, huart3, mobileNumber);
+			//reseting the huart3 >> note 40
+			HAL_Delay(3000);
+			MX_USART3_UART_Init();
 			//switch led off
 			HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_RESET);
 			//switch gps off
@@ -391,7 +408,7 @@ uint8_t watch_conditions(){
 	//if we have no purpose to stay awake (no flag is on)
 	else {
 		//delete all sms
-		sim800_delete_all_sms(1);
+		sim800_delete_all_sms(1, huart2, huart3);
 		//go low power mode
 	    //NOTE : code for low power mode testing ...
 	    char sentence[50] = "";
@@ -446,15 +463,16 @@ int main(void)
   MX_DMA_Init();
   MX_USART1_UART_Init();
   MX_USART3_UART_Init();
+  MX_I2C1_Init();
   /* USER CODE BEGIN 2 */
   //setup gsm module
-  sim800_setup(1);
+  sim800_setup(1, huart2, huart3);
 
   //switch GPS module on
   //init DMA
   HAL_UART_Receive_DMA (&huart1, (uint8_t*)UART1_rxBuffer, 700);
   //turn gps module on
-  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_10, GPIO_PIN_SET);
+  //HAL_GPIO_WritePin(GPIOA, GPIO_PIN_10, GPIO_PIN_SET);
 
 
   /* USER CODE END 2 */
@@ -471,7 +489,7 @@ int main(void)
     }
 
     //extract location under "DDD,DDD" format
-    m8n_read_location(nmea_raw_data, &loc_str);
+    m8n_read_location(nmea_raw_data, &loc_str, huart2, gps_lock);
 
     watch_conditions();
 
@@ -520,6 +538,54 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
+}
+
+/**
+  * @brief I2C1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_I2C1_Init(void)
+{
+
+  /* USER CODE BEGIN I2C1_Init 0 */
+
+  /* USER CODE END I2C1_Init 0 */
+
+  /* USER CODE BEGIN I2C1_Init 1 */
+
+  /* USER CODE END I2C1_Init 1 */
+  hi2c1.Instance = I2C1;
+  hi2c1.Init.Timing = 0x00303D5B;
+  hi2c1.Init.OwnAddress1 = 0;
+  hi2c1.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
+  hi2c1.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
+  hi2c1.Init.OwnAddress2 = 0;
+  hi2c1.Init.OwnAddress2Masks = I2C_OA2_NOMASK;
+  hi2c1.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
+  hi2c1.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
+  if (HAL_I2C_Init(&hi2c1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Configure Analogue filter
+  */
+  if (HAL_I2CEx_ConfigAnalogFilter(&hi2c1, I2C_ANALOGFILTER_ENABLE) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Configure Digital filter
+  */
+  if (HAL_I2CEx_ConfigDigitalFilter(&hi2c1, 0) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN I2C1_Init 2 */
+
+  /* USER CODE END I2C1_Init 2 */
+
 }
 
 /**
