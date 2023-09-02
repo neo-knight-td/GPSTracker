@@ -161,51 +161,19 @@ int mma8452q_read_from_register(uint8_t debug_on, uint8_t reg_addr, uint8_t* dat
 	}
 }
 
-//this function checks the system mode of the mma8452q accelerometer. Returns 0 if standby (or error) and 1 if active.
+//this function checks that the accelero is online
 int mma8452q_whoami(uint8_t debug_on){
 
-	uint8_t sysmod;
+	uint8_t id;
 	uint8_t default_id = 0x2A;
 
-	HAL_I2C_Mem_Read(&hi2c1, MMA8452Q_ADDR, WHO_AM_I_ADDR, 1, &sysmod, 1, HAL_MAX_DELAY);
+	HAL_I2C_Mem_Read(&hi2c1, MMA8452Q_ADDR, WHO_AM_I_ADDR, 1, &id, 1, HAL_MAX_DELAY);
 
-	return (memcmp(&sysmod, &default_id, 1) == 0);
-
-}
-
-//this function checks the system mode of the mma8452q accelerometer. Returns 0 if standby (or error) and 1 if active.
-int mma8452q_read_sysmod(uint8_t debug_on){
-
-	uint8_t sysmod;
-
-	//mma8452q_write_into_register(1, SYS_MOD_ADDR, sysmod);
-
-	if(!mma8452q_read_from_register(1, CTRL_REG1_ADDR, &sysmod)){
-		return 0;
-	}
-
-	return (sysmod & 0x01);
+	return (memcmp(&id, &default_id, 1) == 0);
 
 }
 
-//this function writes the system mode of the mma8452q accelerometer. 0 for standby and 1 for active
-int mma8452q_write_sysmod(uint8_t debug_on, uint8_t sysmod_cmd){
-
-	uint8_t sysmod;
-
-	mma8452q_read_from_register(1, CTRL_REG1_ADDR, &sysmod);
-
-	sysmod_cmd = sysmod & ~(0x01);
-
-	if(!mma8452q_write_into_register(1, CTRL_REG1_ADDR, sysmod)){
-		return 0;
-	}
-
-	return 1;
-
-}
-
-
+//sets the accelero active bit to 0
 void mma8452q_standby(uint8_t debug_on){
 
 	uint8_t sysmod;
@@ -249,6 +217,7 @@ void mma8452q_standby(uint8_t debug_on){
 
 }
 
+//sets the accelero active bit to 1
 void mma8452q_active(uint8_t debug_on){
 
 	uint8_t sysmod;
@@ -292,21 +261,36 @@ void mma8452q_active(uint8_t debug_on){
 }
 
 //this function reads the ELE & OAE bits from the configuration register and returns true if both of them are 1
-int mma8452q_configure(uint8_t debug_on){
+int mma8452q_setup(uint8_t debug_on){
 
-	uint8_t ffmtcfg = 0xF8;
+	uint8_t freefall_motion_config = 0xF8;
 
+	uint8_t buf[256];
+
+	if(debug_on){
+		strcpy((char*)buf, "Setting up MMA8452Q...\r\n");
+		HAL_UART_Transmit(&huart2, buf, strlen((char*)buf), HAL_MAX_DELAY);
+
+		HAL_Delay(500);
+	}
+
+	//write desired config
+	HAL_I2C_Mem_Write(&hi2c1, MMA8452Q_ADDR, FF_MT_CFG_ADDR, 1, &freefall_motion_config, 1, HAL_MAX_DELAY);
+
+	uint8_t ff;
+
+	//read it back, for control
+	HAL_I2C_Mem_Read(&hi2c1, MMA8452Q_ADDR, FF_MT_CFG_ADDR, 1, &ff, 1, HAL_MAX_DELAY);
+
+	/*
 	mma8452q_write_into_register(1, FF_MT_CFG_ADDR, ffmtcfg);
 
 	mma8452q_read_from_register(1, FF_MT_CFG_ADDR, &ffmtcfg);
+	*/
 
-	//check that accelero is configured for motion detection
-	if (ffmtcfg == 0xF8){
-		return 1;
-	}
-	else{
-		return 0;
-	}
+	uint8_t comp = memcmp(&freefall_motion_config, &ff,1);
+
+	return((memcmp(&freefall_motion_config, &ff,1) == 0));
 }
 
 //this function will check various conditions
@@ -397,9 +381,14 @@ uint8_t watch_conditions(){
 
 		HAL_Delay(500);
 
+		mma8452q_setup(1);
+
+		HAL_Delay(500);
+
 		mma8452q_active(1);
 
 		HAL_Delay(500);
+
 
 	}
 	//if we have a location request
