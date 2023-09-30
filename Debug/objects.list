@@ -1,5 +1,6 @@
 "./Core/Src/m8n.o"
 "./Core/Src/main.o"
+"./Core/Src/mma8452q.o"
 "./Core/Src/sim800.o"
 "./Core/Src/stm32g0xx_hal_msp.o"
 "./Core/Src/stm32g0xx_it.o"

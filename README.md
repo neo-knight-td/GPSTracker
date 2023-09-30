@@ -2,7 +2,7 @@
 
 As I wanted to build experience in the field of embedded software programming, I was thinking of a nice project to work on. I found the idea of a GPS tracker. This project would allow me to interact with electronic components, develop in C for an MCU, gain experience with an embedded software IDE (STM32CubeIDE), test an embedded system and (last but not least) keep in touch with my love for motorcycles.
 
-This project provides the C code required to turn an STM 32 MCU into a GPS tracker. The project notes are available [below](https://github.com/neo-knight-td/GPSTracker#notes-on-the-project). These notes summarize all the small obstacles I met while making this project. As I have only few hours a week to work on this, the notes are pretty useful to remember what I did last coding session and thus improve efficiency.
+This project provides the C code required to turn an STM 32 MCU into a GPS tracker. The project notes are available [below](https://github.com/neo-knight-td/GPSTracker#notes-on-the-project). These notes summarize all the small obstacles I met while making this project. As I have only few hours a week to work on this, the notes are also pretty useful to remember what I did last coding session and thus improve efficiency.
 
 ## Notes on the project
 
@@ -341,18 +341,44 @@ I followed [Digi-Key](https://www.digikey.be/en/maker/projects/getting-started-w
 
 48. After writing the function to transit from ACTIVE to STANDBY mode, I observe that even after the accelero is set in standby mode, the value read from the FF_MT_CFG register is not the one I wrote. Same thing with the SYSMOD register (the register used for switching between active and stanby modes). For this last one, it's explained from the documentation as the default val.. Omg, this register is read only !! :
 
-To change the system mode on the MMA8452Q accelerometer, you need to modify the appropriate bits in the CTRL_REG1 (Control Register 1). The CTRL_REG1 register controls various settings related to the operating mode, data rate, and other features of the sensor. Here's a step-by-step guide on how to change the system mode:
-
-Read the Current Register Value (Optional): Before making any changes, you might want to read the current value of the CTRL_REG1 register to understand the existing settings. This can be done by sending a read command to the sensor's I2C address and reading the value from the CTRL_REG1 register.
-
-Set the System Mode Bits: The relevant bits for setting the system mode are typically the first two bits (MODE1 and MODE0) in the CTRL_REG1 register. The combination of these bits determines the operating mode:
-
-MODE1 MODE0: Operation Mode
-0 0: Standby mode
-0 1: Active mode (Accelerometer is active)
-1 0: Low-power mode (Reduced noise, lower data rate)
-1 1: High-resolution mode (Higher data rate, higher noise)
-
 49. What am I sometimes does not work
 
 50. The standby and active functions seems to work. The result from mma8452q_read_sysmod seem erroneous.
+
+### On the 2nd of September 2023
+
+51. I ended up using HAL built in function for writing into and reading from the MMA8452Q registers : ```HAL_I2C_Mem_Write``` and ```HAL_I2C_Mem_Read```. With these two functions I was able to write a working suite of function for setting up the accelerometer.
+
+### On the 2nd of September 2023
+
+52. Now that all sensors required for the project are operational, the time has come to switch from the nucleo board (STM32G070RB) to the bluepill (STM32F103C8T6). I started with the gsm module that I connected on the bluepill.
+
+  * First problem that I met is that no info was coming on the serial. I launched a degugging session and observed that the code was running properly. After some internet search, it turns out the bluepill (clones) do not come with a pre-installed bootloader which makes the micro usb connection inoperational for serial communication with the PC.
+  * Second issue was that the sim800 module did not respond to the AT commands I sent to it. I deduced this was once again due to the bad connections of the jumpers at the level of then pin. I therefore decided to solder the pins to copper wires. I must have failed the soldering as, as from that moment, the sim800 could never connect to the network again.
+
+53. Following the issues met in point 52, I made an additional Amazon order for :
+  * 2 USB/TTL converters
+  * 2 SIM800L modules
+  * a kit of pcb (for building the prototype)
+
+### On the 4th of September
+
+54. Pending the delivery of my parcels, I started drawing the circuitry in fritzz.
+
+### On the 9th of September
+
+55. I received all my parcels and proceeded to the migration on the blue pill. After some troubleshooting, all three sensors are working. Now is the time to transpose the breadbaord circuitery onto the PCB.
+
+## On the 14th of September
+
+56. I am spening a lot of time on Fusion 360 for 3D printing the box... Not easy but interesting. Also, I ordered some capacitors and installed those at input of sim800 because battery had to be fully charged for the module to successfully connect to the network. If it was not the case the amount of current required was too high and the connection was never made.
+
+### On the 29th of September
+
+57. Now on the blue pill, when booting from the battery, the accelerometer does not respond after the sim800 connects to the network. The problem never occured when the module was plugged on USB (with the battery connected or not). I measured the voltages in both conditions - with and without battery - at the accelerometer input and obtained respectively 4.02 V and 3.2 V. First I found it weird that the mma8452q chip kept working well at 3.2 V despite the flag "5 V" on the VDD pin. Then I checked the datasheet and saw the chip was operating at 2.5 V. I supposed step down converter embedded to the accelerometer has a range of something like 3V - 5V. I thus tested connecting the module to the 3.3 V (and disconnected the module from the 5 V line) and saw it worked perfectly. There was a way to solve my issue. 
+
+58. A small re-routing was made in the circuit. Instead of feeding the accelerometer with the 5 V line (which is shared with the sim 800), I isolated it from the rest of the circuit by connecting it to the 3.3 V. This made disappear the sporadic issue of accelerometer not responding once the sim800 had connected to the network (which I think was caused by a too high amount of current flowing from the 5 V line to the sim800 when the accelerometer was just booting up).
+
+![plot](/Pictures/rerouting_note57.png)
+
+Do not forget to cut the line next time !!

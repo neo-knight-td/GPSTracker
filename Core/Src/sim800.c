@@ -5,6 +5,9 @@
  *      Author: thomas
  */
 
+#ifndef SRC_SIM800_C_
+#define SRC_SIM800_C_
+
 #include "sim800.h"
 
 //this function checks that SIM800 GSM module responds OK to the AT command "AT" after a maximum of 10 attempts.
@@ -197,5 +200,5 @@ int sim800_originate_call(uint8_t debug_on, UART_HandleTypeDef huart2, UART_Hand
 	return 1;
 }
 
-
+#endif /* SRC_SIM800_C_ */
 

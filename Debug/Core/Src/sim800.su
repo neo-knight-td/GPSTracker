@@ -1,6 +1,6 @@
-../Core/Src/sim800.c:11:5:sim800_AT_OK	80	static
-../Core/Src/sim800.c:47:5:sim800_setup	424	static
-../Core/Src/sim800.c:83:5:sim800_send_sms	416	static
-../Core/Src/sim800.c:113:5:sim800_read_sms	1416	static
-../Core/Src/sim800.c:152:5:sim800_delete_all_sms	416	static
-../Core/Src/sim800.c:179:5:sim800_originate_call	384	static
+../Core/Src/sim800.c:14:5:sim800_AT_OK	80	static
+../Core/Src/sim800.c:50:5:sim800_setup	424	static
+../Core/Src/sim800.c:86:5:sim800_send_sms	416	static
+../Core/Src/sim800.c:116:5:sim800_read_sms	1416	static
+../Core/Src/sim800.c:155:5:sim800_delete_all_sms	416	static
+../Core/Src/sim800.c:182:5:sim800_originate_call	384	static

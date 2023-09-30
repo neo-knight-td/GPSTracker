@@ -1,0 +1,5 @@
+../Core/Src/mma8452q.c:14:5:mma8452q_whoami	312	static
+../Core/Src/mma8452q.c:51:6:mma8452q_standby	312	static
+../Core/Src/mma8452q.c:95:6:mma8452q_active	312	static
+../Core/Src/mma8452q.c:138:6:mma8452q_setup	312	static
+../Core/Src/mma8452q.c:201:5:mma8452q_motion_detection	312	static

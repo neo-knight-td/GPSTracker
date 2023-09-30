@@ -24,7 +24,10 @@
 #include "string.h"
 #include "stdlib.h"
 #include "stdio.h"
+
 #include "sim800.h"
+#include "m8n.h"
+#include "mma8452q.h"
 
 /* USER CODE END Includes */
 
@@ -42,29 +45,15 @@
 /* USER CODE BEGIN PD */
 uint8_t UART1_rxBuffer[BUFF_SIZE] = {0};
 uint8_t UART3_rxBuffer[BUFF_SIZE] = {0};
-//void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart);
 char nmea_raw_data[BUFF_SIZE];
 char loc_str[50] = "NO GPS LOCK";
-int gps_lock = 0;
-int gps_lock_th = 20;
-int flag = 0;
+int gps_lock_count = 0;
+//int flag = 0;
+uint8_t wakeup_flag = 0;
 uint8_t stay_awake_flag = 1;
-uint8_t wkp_flag = 0;
 uint8_t send_loc_flag = 0;
+uint8_t gps_lock_flag = 0;
 char mobileNumber[] = "+32456413932";
-
-//accelero
-//ref documentation
-static const uint8_t MMA8452Q_ADDR = 0x1D << 1;
-static const uint8_t CTRL_REG1_ADDR = 0x2A;
-static const uint8_t WHO_AM_I_ADDR = 0x0D;
-static const uint8_t SYS_MOD_ADDR = 0x0B;
-static const uint8_t FF_MT_CFG_ADDR = 0x15;
-static const uint8_t FF_MT_SRC_ADDR = 0x16;
-static const uint8_t FF_MT_THS_ADDR = 0x17;
-
-//float temp_c;
-
 
 /* USER CODE END PD */
 
@@ -95,209 +84,11 @@ static void MX_USART3_UART_Init(void);
 static void MX_I2C1_Init(void);
 /* USER CODE BEGIN PFP */
 
-float convert_DDmm_to_DDD(float DDmm, char *sign){
-
-    //convert to DDD format
-    int DD = ((int)DDmm)/100;
-    float mm = DDmm - DD*100;
-    float DDD = DD + mm/60;
-
-    //add negative sign if south or west
-    if (strcmp(sign,"S") == 0 || strcmp(sign,"W") == 0){
-        DDD = -DDD;
-    }
-
-    return DDD;
-}
-
-
-//this function writes data into a register of the mma8452q accelerometer.
-int mma8452q_write_into_register(uint8_t debug_on, uint8_t reg_addr, uint8_t data){
-	HAL_StatusTypeDef ret;
-	uint8_t i2c_buf[12];
-
-	//first byte sent is register address
-	i2c_buf[0] = reg_addr;
-    //second byte sent is data to write
-	i2c_buf[1] = data;
-
-    // Write into the register of MMA8452Q
-    ret = HAL_I2C_Master_Transmit(&hi2c1, MMA8452Q_ADDR, i2c_buf, 2, HAL_MAX_DELAY);
-    if ( ret != HAL_OK ) {
-		  strcpy((char*)i2c_buf, "Error Tx\r\n");
-		  if (debug_on){HAL_UART_Transmit(&huart2,i2c_buf,strlen((char*)i2c_buf),HAL_MAX_DELAY);}
-		  return 0;
-    } else {
-
-    	return 1;
-
-    }
-}
-
-//this function reads data from a register of the mma8452q accelerometer.
-int mma8452q_read_from_register(uint8_t debug_on, uint8_t reg_addr, uint8_t* data){
-	HAL_StatusTypeDef ret;
-	uint8_t i2c_buf[12];
-
-    // Tell MMA8452Q from which register we want to read
-	i2c_buf[0] = reg_addr;
-	ret = HAL_I2C_Master_Transmit(&hi2c1, MMA8452Q_ADDR, i2c_buf, 1, HAL_MAX_DELAY);
-	if ( ret != HAL_OK ) {
-		strcpy((char*)i2c_buf, "Error Tx\r\n");
-		if (debug_on){HAL_UART_Transmit(&huart2,i2c_buf,strlen((char*)i2c_buf),HAL_MAX_DELAY);}
-		return 0;
-	} else {
-
-	  // read from the register
-	  ret = HAL_I2C_Master_Receive(&hi2c1, MMA8452Q_ADDR, i2c_buf, 1, HAL_MAX_DELAY);
-	  if ( ret != HAL_OK ) {
-		  strcpy((char*)i2c_buf, "Error Rx\r\n");
-		  if (debug_on){HAL_UART_Transmit(&huart2,i2c_buf,strlen((char*)i2c_buf),HAL_MAX_DELAY);}
-		  return 0;
-	  } else {
-		  *data = i2c_buf[0];
-		  return 1;
-	  }
-	}
-}
-
-//this function checks that the accelero is online
-int mma8452q_whoami(uint8_t debug_on){
-
-	uint8_t id;
-	uint8_t default_id = 0x2A;
-
-	HAL_I2C_Mem_Read(&hi2c1, MMA8452Q_ADDR, WHO_AM_I_ADDR, 1, &id, 1, HAL_MAX_DELAY);
-
-	return (memcmp(&id, &default_id, 1) == 0);
-
-}
-
-//sets the accelero active bit to 0
-void mma8452q_standby(uint8_t debug_on){
-
-	uint8_t sysmod;
-	uint8_t buf[256];
-
-	if(debug_on){
-		strcpy((char*)buf, "Request to go standby.\r\n");
-		HAL_UART_Transmit(&huart2, buf, strlen((char*)buf), HAL_MAX_DELAY);
-
-		HAL_Delay(500);
-	}
-
-	//read the active bit
-	HAL_I2C_Mem_Read(&hi2c1, MMA8452Q_ADDR, CTRL_REG1_ADDR, 1, &sysmod, 1, HAL_MAX_DELAY);
-
-	if (debug_on){
-		if (!(sysmod & 0x01)){
-			strcpy((char*)buf, "I was standby already.\r\n");
-			HAL_UART_Transmit(&huart2, buf, strlen((char*)buf), HAL_MAX_DELAY);
-		}
-		else{
-			strcpy((char*)buf, "I was active.\r\n");
-			HAL_UART_Transmit(&huart2, buf, strlen((char*)buf), HAL_MAX_DELAY);
-		}
-
-		HAL_Delay(500);
-	}
-
-	//set active bit to 0 (standby mode)
-	sysmod &= ~(0x01);
-
-	//write the active bit into mm4852q
-	HAL_I2C_Mem_Write(&hi2c1, MMA8452Q_ADDR, CTRL_REG1_ADDR, 1, &sysmod, 1, HAL_MAX_DELAY);
-
-	if (debug_on){
-		if (!(sysmod & 0x01)){
-			strcpy((char*)buf, "Going standby.\r\n");
-			HAL_UART_Transmit(&huart2, buf, strlen((char*)buf), HAL_MAX_DELAY);
-		}
-	}
-
-}
-
-//sets the accelero active bit to 1
-void mma8452q_active(uint8_t debug_on){
-
-	uint8_t sysmod;
-	uint8_t buf[256];
-
-	if(debug_on){
-		strcpy((char*)buf, "Request to go active.\r\n");
-		HAL_UART_Transmit(&huart2, buf, strlen((char*)buf), HAL_MAX_DELAY);
-
-		HAL_Delay(500);
-	}
-
-	//read the active bit
-	HAL_I2C_Mem_Read(&hi2c1, MMA8452Q_ADDR, CTRL_REG1_ADDR, 1, &sysmod, 1, HAL_MAX_DELAY);
-
-	if (debug_on){
-		if ((sysmod & 0x01)){
-			strcpy((char*)buf, "I was active already.\r\n");
-			HAL_UART_Transmit(&huart2, buf, strlen((char*)buf), HAL_MAX_DELAY);
-		}
-		else{
-			strcpy((char*)buf, "I was standby.\r\n");
-			HAL_UART_Transmit(&huart2, buf, strlen((char*)buf), HAL_MAX_DELAY);
-		}
-
-		HAL_Delay(500);
-	}
-
-	//set active bit to 1 (active mode)
-	sysmod |= (0x01);
-
-	//write the active bit into mm4852q
-	HAL_I2C_Mem_Write(&hi2c1, MMA8452Q_ADDR, CTRL_REG1_ADDR, 1, &sysmod, 1, HAL_MAX_DELAY);
-
-	if (debug_on){
-		if ((sysmod & 0x01)){
-			strcpy((char*)buf, "Going active.\r\n");
-			HAL_UART_Transmit(&huart2, buf, strlen((char*)buf), HAL_MAX_DELAY);
-		}
-	}
-}
-
-//this function reads the ELE & OAE bits from the configuration register and returns true if both of them are 1
-int mma8452q_setup(uint8_t debug_on){
-
-	uint8_t freefall_motion_config = 0xF8;
-
-	uint8_t buf[256];
-
-	if(debug_on){
-		strcpy((char*)buf, "Setting up MMA8452Q...\r\n");
-		HAL_UART_Transmit(&huart2, buf, strlen((char*)buf), HAL_MAX_DELAY);
-
-		HAL_Delay(500);
-	}
-
-	//write desired config
-	HAL_I2C_Mem_Write(&hi2c1, MMA8452Q_ADDR, FF_MT_CFG_ADDR, 1, &freefall_motion_config, 1, HAL_MAX_DELAY);
-
-	uint8_t ff;
-
-	//read it back, for control
-	HAL_I2C_Mem_Read(&hi2c1, MMA8452Q_ADDR, FF_MT_CFG_ADDR, 1, &ff, 1, HAL_MAX_DELAY);
-
-	/*
-	mma8452q_write_into_register(1, FF_MT_CFG_ADDR, ffmtcfg);
-
-	mma8452q_read_from_register(1, FF_MT_CFG_ADDR, &ffmtcfg);
-	*/
-
-	uint8_t comp = memcmp(&freefall_motion_config, &ff,1);
-
-	return((memcmp(&freefall_motion_config, &ff,1) == 0));
-}
-
 //this function will check various conditions
 uint8_t watch_conditions(){
 
 	//if we just woke up
-	if (wkp_flag == 1){
+	if (wakeup_flag == 1){
 
 		//reseting the huart3 >> note 40
 		HAL_Delay(3000);
@@ -312,89 +103,25 @@ uint8_t watch_conditions(){
 			send_loc_flag = 1;
 		}
 		//reset flag
-		wkp_flag = 0;
+		wakeup_flag = 0;
 	}
 	//if we need to stay awake
 	else if (stay_awake_flag == 1){
 
-		uint8_t buf[12];
+		//HAL_Delay(500);
 
-		strcpy((char*)buf, "WhoAmI?\r\n");
-		HAL_UART_Transmit(&huart2, buf, strlen((char*)buf), HAL_MAX_DELAY);
+		//sim800_originate_call(1, huart2, huart3, mobileNumber);
 
-		if(mma8452q_whoami(1)){
-			strcpy((char*)buf, "Me!\r\n");
-		}
-		else{
-			strcpy((char*)buf, "NoOne\r\n");
-		}
+		mma8452q_motion_detection(1, &huart2, &hi2c1);
 
-		HAL_UART_Transmit(&huart2, buf, strlen((char*)buf), HAL_MAX_DELAY);
-
-		HAL_Delay(500);
-
-		/*
-		strcpy((char*)buf, "Standby?\r\n");
-		HAL_UART_Transmit(&huart2, buf, strlen((char*)buf), HAL_MAX_DELAY);
-
-		if(!mma8452q_read_sysmod(1)){
-			strcpy((char*)buf, "Yes\r\n");
-		}
-		else{
-			strcpy((char*)buf, "No\r\n");
-		}
-
-		HAL_UART_Transmit(&huart2, buf, strlen((char*)buf), HAL_MAX_DELAY);
-
-		HAL_Delay(500);
-
-
-
-		strcpy((char*)buf, "Active!\r\n");
-		HAL_UART_Transmit(&huart2, buf, strlen((char*)buf), HAL_MAX_DELAY);
-
-		*/
-
-
-		/*
-
-		strcpy((char*)buf, "Active?\r\n");
-		HAL_UART_Transmit(&huart2, buf, strlen((char*)buf), HAL_MAX_DELAY);
-
-		if(mma8452q_read_sysmod(1)){
-			strcpy((char*)buf, "Yes\r\n");
-		}
-		else{
-			strcpy((char*)buf, "No\r\n");
-		}
-
-		HAL_UART_Transmit(&huart2, buf, strlen((char*)buf), HAL_MAX_DELAY);
-
-		HAL_Delay(500);
-
-
-		strcpy((char*)buf, "Standby!\r\n");
-		HAL_UART_Transmit(&huart2, buf, strlen((char*)buf), HAL_MAX_DELAY);
-
-		*/
-		mma8452q_standby(1);
-
-		HAL_Delay(500);
-
-		mma8452q_setup(1);
-
-		HAL_Delay(500);
-
-		mma8452q_active(1);
-
-		HAL_Delay(500);
+		HAL_Delay(50);
 
 
 	}
 	//if we have a location request
 	else if (send_loc_flag == 1){
 		//check that we have a gps lock
-		if (gps_lock >= gps_lock_th){
+		if (gps_lock_flag){
 			//send sms back with our location
 			sim800_send_sms(loc_str, 1, huart2, huart3, mobileNumber);
 			//reseting the huart3 >> note 40
@@ -471,11 +198,14 @@ int main(void)
   //setup gsm module
   sim800_setup(1, huart2, huart3);
 
+  //setup accelerometer
+  mma8452q_setup(1, &huart2, &hi2c1);
+
   //switch GPS module on
   //init DMA
   HAL_UART_Receive_DMA (&huart1, (uint8_t*)UART1_rxBuffer, 700);
   //turn gps module on
-  //HAL_GPIO_WritePin(GPIOA, GPIO_PIN_10, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_10, GPIO_PIN_SET);
 
 
   /* USER CODE END 2 */
@@ -492,7 +222,7 @@ int main(void)
     }
 
     //extract location under "DDD,DDD" format
-    m8n_read_location(nmea_raw_data, &loc_str, huart2, gps_lock);
+    gps_lock_flag = m8n_read_location(nmea_raw_data, &loc_str, huart2, &gps_lock_count);
 
     watch_conditions();
 
@@ -757,12 +487,6 @@ static void MX_GPIO_Init(void)
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOA, LED_GREEN_Pin|GPIO_PIN_10, GPIO_PIN_RESET);
 
-  /*Configure GPIO pin : RING_Pin */
-  GPIO_InitStruct.Pin = RING_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(RING_GPIO_Port, &GPIO_InitStruct);
-
   /*Configure GPIO pin : B1_Pin */
   GPIO_InitStruct.Pin = B1_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
@@ -852,7 +576,7 @@ void HAL_GPIO_EXTI_Falling_Callback(uint16_t GPIO_Pin)
 		//turn gps module on ==> should be done before waking the stm up
 		//HAL_GPIO_WritePin(GPIOA, GPIO_PIN_10, GPIO_PIN_SET);
 		//set flag on
-		wkp_flag = 1;
+		wakeup_flag = 1;
 
 
   } else {

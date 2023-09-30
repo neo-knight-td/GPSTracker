@@ -13,6 +13,7 @@
 #include "stdio.h"
 #include "stm32g0xx_hal.h"
 
-void m8n_read_location(char nmea_raw_data[], char *loc_str[], UART_HandleTypeDef huart2, int gps_lock);
+float convert_DDmm_to_DDD(float DDmm, char *sign);
+uint8_t m8n_read_location(char nmea_raw_data[], char *loc_str[], UART_HandleTypeDef huart2, int *gps_lock_count);
 
 #endif /* INC_M8N_H_ */

@@ -7,6 +7,7 @@
 C_SRCS += \
 ../Core/Src/m8n.c \
 ../Core/Src/main.c \
+../Core/Src/mma8452q.c \
 ../Core/Src/sim800.c \
 ../Core/Src/stm32g0xx_hal_msp.c \
 ../Core/Src/stm32g0xx_it.c \
@@ -17,6 +18,7 @@ C_SRCS += \
 OBJS += \
 ./Core/Src/m8n.o \
 ./Core/Src/main.o \
+./Core/Src/mma8452q.o \
 ./Core/Src/sim800.o \
 ./Core/Src/stm32g0xx_hal_msp.o \
 ./Core/Src/stm32g0xx_it.o \
@@ -27,6 +29,7 @@ OBJS += \
 C_DEPS += \
 ./Core/Src/m8n.d \
 ./Core/Src/main.d \
+./Core/Src/mma8452q.d \
 ./Core/Src/sim800.d \
 ./Core/Src/stm32g0xx_hal_msp.d \
 ./Core/Src/stm32g0xx_it.d \
@@ -44,7 +47,7 @@ Core/Src/main.o: ../Core/Src/main.c Core/Src/subdir.mk
 clean: clean-Core-2f-Src
 
 clean-Core-2f-Src:
-	-$(RM) ./Core/Src/m8n.d ./Core/Src/m8n.o ./Core/Src/m8n.su ./Core/Src/main.d ./Core/Src/main.o ./Core/Src/main.su ./Core/Src/sim800.d ./Core/Src/sim800.o ./Core/Src/sim800.su ./Core/Src/stm32g0xx_hal_msp.d ./Core/Src/stm32g0xx_hal_msp.o ./Core/Src/stm32g0xx_hal_msp.su ./Core/Src/stm32g0xx_it.d ./Core/Src/stm32g0xx_it.o ./Core/Src/stm32g0xx_it.su ./Core/Src/syscalls.d ./Core/Src/syscalls.o ./Core/Src/syscalls.su ./Core/Src/sysmem.d ./Core/Src/sysmem.o ./Core/Src/sysmem.su ./Core/Src/system_stm32g0xx.d ./Core/Src/system_stm32g0xx.o ./Core/Src/system_stm32g0xx.su
+	-$(RM) ./Core/Src/m8n.d ./Core/Src/m8n.o ./Core/Src/m8n.su ./Core/Src/main.d ./Core/Src/main.o ./Core/Src/main.su ./Core/Src/mma8452q.d ./Core/Src/mma8452q.o ./Core/Src/mma8452q.su ./Core/Src/sim800.d ./Core/Src/sim800.o ./Core/Src/sim800.su ./Core/Src/stm32g0xx_hal_msp.d ./Core/Src/stm32g0xx_hal_msp.o ./Core/Src/stm32g0xx_hal_msp.su ./Core/Src/stm32g0xx_it.d ./Core/Src/stm32g0xx_it.o ./Core/Src/stm32g0xx_it.su ./Core/Src/syscalls.d ./Core/Src/syscalls.o ./Core/Src/syscalls.su ./Core/Src/sysmem.d ./Core/Src/sysmem.o ./Core/Src/sysmem.su ./Core/Src/system_stm32g0xx.d ./Core/Src/system_stm32g0xx.o ./Core/Src/system_stm32g0xx.su
 
 .PHONY: clean-Core-2f-Src
 
