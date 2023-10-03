@@ -381,4 +381,19 @@ I followed [Digi-Key](https://www.digikey.be/en/maker/projects/getting-started-w
 
 ![plot](/Pictures/rerouting_note57.png)
 
+59. I could not load establish the connection to the ST link after a softare update. This issues comes back and forth. Several solutions I found were :
+
+* I followed this tutorial and it worked out the issue (after connecting the ST link to USB 3.0 port).
+
+* I have to unplug battery for launching a debug session, otherwise target is not found. + need to be on USB 2.0 (not 3.0)
+
+* Sometimes, I also need to unpower for a few seconds then power again.
+
+### On the 3rd of October
+
+57. Module seems not to wake up from stop mode (stuck at line 148). I did scrap the stop mode from the equation. Problem stays. Remaining possiblity is the EXTI that does not work.
+
+When reveiwing the code, it seem function `` HAL_GPIO_EXTI_Falling_Callback() `` is nowhere defined. I looked back in these notes and tryed with `` HAL_GPIO_EXTI_Callback() `` (see point 26). This function is well defined. >> to be confirmed issue comes from there
+
+
 Do not forget to cut the line next time !!
