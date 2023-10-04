@@ -2,9 +2,9 @@
 
 As I wanted to build experience in the field of embedded software programming, I was thinking of a nice project to work on. I found the idea of a GPS tracker. This project would allow me to interact with electronic components, develop in C for an MCU, gain experience with an embedded software IDE (STM32CubeIDE), test an embedded system and (last but not least) keep in touch with my love for motorcycles.
 
-This project provides the C code required to turn an STM 32 MCU into a GPS tracker. The project notes are available [below](https://github.com/neo-knight-td/GPSTracker#notes-on-the-project). These notes summarize all the small obstacles I met while making this project. As I have only few hours a week to work on this, the notes are also pretty useful to remember what I did last coding session and thus improve efficiency.
+This project provides the C code required to turn an STM 32 MCU into a GPS tracker. The project notes are available [below](#project_notes). These notes summarize all the small obstacles I met while making this project. As I have only few hours a week to work on this, the notes are also pretty useful to remember what I did last coding session and thus improve efficiency.
 
-## Notes on the project
+## <a name="project_notes"></a>Notes on the project
 
 ### On 4th of June 2023 :
 1. USART 2 is redirected to ACM0.
@@ -369,7 +369,7 @@ I followed [Digi-Key](https://www.digikey.be/en/maker/projects/getting-started-w
 
 55. I received all my parcels and proceeded to the migration on the blue pill. After some troubleshooting, all three sensors are working. Now is the time to transpose the breadbaord circuitery onto the PCB.
 
-## On the 14th of September
+### On the 14th of September
 
 56. I am spening a lot of time on Fusion 360 for 3D printing the box... Not easy but interesting. Also, I ordered some capacitors and installed those at input of sim800 because battery had to be fully charged for the module to successfully connect to the network. If it was not the case the amount of current required was too high and the connection was never made.
 
@@ -393,7 +393,12 @@ I followed [Digi-Key](https://www.digikey.be/en/maker/projects/getting-started-w
 
 57. Module seems not to wake up from stop mode (stuck at line 148). I did scrap the stop mode from the equation. Problem stays. Remaining possiblity is the EXTI that does not work.
 
-When reveiwing the code, it seem function `` HAL_GPIO_EXTI_Falling_Callback() `` is nowhere defined. I looked back in these notes and tryed with `` HAL_GPIO_EXTI_Callback() `` (see point 26). This function is well defined. >> to be confirmed issue comes from there
+When reveiwing the code, it seem function `` HAL_GPIO_EXTI_Falling_Callback() `` is nowhere defined. I looked back in these notes and tryed with `` HAL_GPIO_EXTI_Callback() `` (see point 26). This function is well defined. >> to be confirmed issue comes from there.
 
+### On the 4th of October
+
+58. I implemented the `` HAL_GPIO_EXTI_Callback() `` function but still it was never called. After browsing the internet a little, I found a similar case of some one who had forgot to check the box (enable NVIC). I checked that box and then it worked...
+
+![plot](/Pictures/enable_nvic.png)
 
 Do not forget to cut the line next time !!
