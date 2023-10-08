@@ -401,4 +401,16 @@ When reveiwing the code, it seem function `` HAL_GPIO_EXTI_Falling_Callback() ``
 
 ![plot](/Pictures/enable_nvic.png)
 
+### On the 5th of October 
+
+59. The GPS seemed not to be powered anymore, therefore I made a wiring check and identified a loose connection. Soldered it.
+
+60. GPS signal seems way easier to catch when usb is plugged in
+
+61. Led switches off after some time after send loc flag has been on without sending location. I tried troubleshoot without the TTL (only beased on led status) :
+  * When in debug and that gps is locked, no issue, sms received.
+  * When not in debug mode but with gps locked and usb plugged in, works once on two (not an approximation, really a cycle and on second time - when no send - led is lit for a short time only).
+
+It was pretty difficult to explain the reason of these sms that were not sent. Therefore I connected the TTL to the module (soldered pins PA02 & PA03). Quickly, I saw I was getting an error following command ``AT+CMGL="ALL"  `` was issued to the sim800. I though a possible cause is that, when powering the module on usb, if battery was not plugged in soon enough, configuration was lost because sim800 turned off (no enough current) which leads to an error as the CMGL command requires a propoer config of the sim800 to work.
+
 Do not forget to cut the line next time !!
